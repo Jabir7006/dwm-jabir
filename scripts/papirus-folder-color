@@ -1,0 +1,282 @@
+#!/usr/bin/env python3
+"""papirus-folder-color — theme the *folders* of Papirus, nothing else.
+
+Builds a tiny user-local icon theme named "Papirus-Dynamic" that overrides only
+Papirus' folder/user icons (places) and inherits everything else from the stock
+Papirus-Dark or Papirus-Light theme.  The folder colour is chosen either by name
+(one of Papirus' 25 bundled colour variants) or, when --color is omitted, by
+picking the nearest bundled colour to --accent.
+
+Why an overlay instead of editing the system theme:
+  * /usr/share is read-only for the user and we must not need sudo on a theme
+    switch.
+  * Copying Papirus would duplicate ~220 MB; the overlay is just symlinks.
+  * Only place icons are overridden, so app/brand icons stay exactly as shipped.
+
+Usage:
+  papirus-folder-color --mode dark  --color orange
+  papirus-folder-color --mode light --accent '#D79921'
+  papirus-folder-color --mode dark  --accent '#D2662C'   # dynamic themes
+
+Exit codes: 0 = applied, 1 = error (caller should keep the previous icon theme).
+"""
+
+from __future__ import annotations
+
+import argparse
+import colorsys
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+HOME = os.path.expanduser("~")
+DATA_HOME = os.environ.get("XDG_DATA_HOME", os.path.join(HOME, ".local", "share"))
+STATE_HOME = os.environ.get("XDG_STATE_HOME", os.path.join(HOME, ".local", "state"))
+SYSTEM_ICONS = "/usr/share/icons"
+OVERLAY_NAME = "Papirus-Dynamic"
+OVERLAY_DIR = os.path.join(DATA_HOME, "icons", OVERLAY_NAME)
+STATE_FILE = os.path.join(STATE_HOME, "dwm-titus", "icon-folder")
+
+SIZE_RE = re.compile(r"^\d+x\d+$")
+VARIANT_DOCS_RE = re.compile(r"^folder-(.+)-documents\.svg$")
+HEX_RE = re.compile(r"#[0-9a-fA-F]{6}")
+
+
+def source_theme(mode: str) -> str:
+    return os.path.join(SYSTEM_ICONS, "Papirus-Dark" if mode == "dark" else "Papirus-Light")
+
+
+def bundled_colors(src: str) -> list[str]:
+    places = os.path.join(src, "48x48", "places")
+    if not os.path.isdir(places):
+        return []
+    colors = set()
+    for name in os.listdir(places):
+        m = VARIANT_DOCS_RE.match(name)
+        if m:
+            colors.add(m.group(1))
+    return sorted(colors)
+
+
+def variant_regex(colors: list[str]) -> re.Pattern[str]:
+    # Longest first so palebrown/deeporange/darkcyan win over brown/orange/cyan.
+    alternation = "|".join(re.escape(c) for c in sorted(colors, key=len, reverse=True))
+    return re.compile(rf"^(folder|user)-({alternation})(-.+)?\.svg$")
+
+
+def rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def primary_hex(path: str) -> str | None:
+    """The most saturated non-white colour in an SVG: its folder body tone."""
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            text = f.read()
+    except OSError:
+        return None
+
+    best: tuple[float, str] | None = None
+    for h in HEX_RE.findall(text):
+        r, g, b = rgb(h)
+        _, sat, val = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        if val > 0.95 and sat < 0.08:      # skip whites / near-greys
+            continue
+        score = sat * val
+        if best is None or score > best[0]:
+            best = (score, h.lower())
+    return best[1] if best else None
+
+
+def nearest_color(accent: str, colors: list[str], src: str) -> str:
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", accent or ""):
+        raise ValueError(f"invalid accent: {accent!r}")
+    a = rgb(accent)
+    ranked = []
+    for color in colors:
+        probe = os.path.join(src, "48x48", "places", f"folder-{color}-documents.svg")
+        if not os.path.isfile(probe):
+            probe = os.path.join(src, "48x48", "places", f"folder-{color}.svg")
+        hex_color = primary_hex(probe)
+        if not hex_color:
+            continue
+        c = rgb(hex_color)
+        dist = sum((x - y) ** 2 for x, y in zip(a, c)) ** 0.5
+        ranked.append((dist, color))
+    if not ranked:
+        raise ValueError("could not measure any bundled folder colour")
+    return min(ranked)[1]
+
+
+def size_dirs(src: str) -> list[tuple[str, int]]:
+    """Real base size dirs (skip @2x symlinks) that carry folder colour variants."""
+    found = []
+    try:
+        entries = sorted(os.listdir(src))
+    except OSError:
+        return []
+    for name in entries:
+        if not SIZE_RE.match(name):
+            continue
+        places = os.path.join(src, name, "places")
+        if not os.path.isdir(places):
+            continue
+        try:
+            names = os.listdir(places)
+        except OSError:
+            continue
+        if any(VARIANT_DOCS_RE.match(n) for n in names):
+            found.append((name, int(name.split("x", 1)[0])))
+    return found
+
+
+def build_overlay(mode: str, color: str, source: str) -> int:
+    colors = bundled_colors(source)
+    if color not in colors:
+        raise ValueError(f"unknown folder colour {color!r}")
+    vre = variant_regex(colors)
+    sizes = size_dirs(source)
+    if not sizes:
+        raise ValueError(f"no folder colour variants found in {source}")
+
+    parent = os.path.dirname(OVERLAY_DIR)
+    os.makedirs(parent, exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix=f".{OVERLAY_NAME}.", dir=parent)
+    made = 0
+
+    try:
+        directory_entries = []
+        for size_name, px in sizes:
+            src_places = os.path.join(source, size_name, "places")
+            out_places = os.path.join(tmp, size_name, "places")
+            os.makedirs(out_places, exist_ok=True)
+            names: set[str] = set()
+
+            # 1) Every visible place icon whose real target is a colour variant:
+            #    folder, folder-documents, inode-directory, user-home, and the
+            #    many legacy aliases all get a symlink to the chosen variant.
+            for name in os.listdir(src_places):
+                if not name.endswith(".svg") or vre.match(name):
+                    continue  # skip the variant files themselves
+                target_name = os.path.basename(os.path.realpath(os.path.join(src_places, name)))
+                m = vre.match(target_name)
+                if not m:
+                    continue
+                chosen = f"{m.group(1)}-{color}{m.group(3) or ''}.svg"
+                chosen_path = os.path.join(src_places, chosen)
+                if not os.path.isfile(chosen_path):
+                    continue
+                os.symlink(chosen_path, os.path.join(out_places, name))
+                names.add(name)
+                made += 1
+
+            # 2) Guarantee the canonical base names exist even if a variant has
+            #    no shipped alias (future Papirus releases).
+            for name in os.listdir(src_places):
+                m = vre.match(name)
+                if not m:
+                    continue
+                base = f"{m.group(1)}{m.group(3) or ''}.svg"
+                if base in names or vre.match(base):
+                    continue
+                chosen = f"{m.group(1)}-{color}{m.group(3) or ''}.svg"
+                chosen_path = os.path.join(src_places, chosen)
+                if os.path.isfile(chosen_path):
+                    os.symlink(chosen_path, os.path.join(out_places, base))
+                    names.add(base)
+                    made += 1
+
+            directory_entries.append((f"{size_name}/places", px))
+
+        inherits = ("Papirus-Dark,breeze-dark,hicolor" if mode == "dark"
+                    else "Papirus-Light,breeze,hicolor")
+        lines = [
+            "[Icon Theme]",
+            f"Name={OVERLAY_NAME}",
+            "Comment=Papirus icons with per-theme folder colours",
+            f"Inherits={inherits}",
+            "Example=folder",
+            "FollowsColorScheme=true",
+            "",
+            "Directories=" + ",".join(d for d, _ in directory_entries),
+            "",
+        ]
+        for directory, px in directory_entries:
+            lines += [f"[{directory}]", f"Size={px}", "Context=Places",
+                      "Type=Fixed", ""]
+        with open(os.path.join(tmp, "index.theme"), "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+
+        # Swap the finished tree into place. The window where the theme name is
+        # absent is microseconds; GTK re-resolves on the settings change below.
+        old = OVERLAY_DIR + ".old"
+        if os.path.exists(old):
+            shutil.rmtree(old)
+        if os.path.exists(OVERLAY_DIR):
+            os.rename(OVERLAY_DIR, old)
+        try:
+            os.rename(tmp, OVERLAY_DIR)
+        except OSError:
+            if os.path.exists(old):
+                os.rename(old, OVERLAY_DIR)
+            raise
+        if os.path.exists(old):
+            shutil.rmtree(old)
+        tmp = ""
+    finally:
+        if tmp and os.path.exists(tmp):
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # gtk-update-icon-cache is best-effort: a missing cache never breaks lookup.
+    subprocess.run(["gtk-update-icon-cache", "-qf", OVERLAY_DIR],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        f.write(f"theme={OVERLAY_NAME}\nmode={mode}\ncolor={color}\n")
+
+    return made
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--mode", choices=("dark", "light"), required=True)
+    ap.add_argument("--color", default="", help="Papirus bundled colour name")
+    ap.add_argument("--accent", default="", help="hex accent; nearest colour if --color is empty")
+    ap.add_argument("--quiet", action="store_true")
+    args = ap.parse_args()
+
+    src = source_theme(args.mode)
+    if not os.path.isdir(src):
+        print(f"papirus-folder-color: theme not found: {src}", file=sys.stderr)
+        return 1
+
+    colors = bundled_colors(src)
+    if not colors:
+        print(f"papirus-folder-color: no folder colour variants in {src}", file=sys.stderr)
+        return 1
+
+    color = args.color.strip()
+    try:
+        if not color:
+            color = nearest_color(args.accent, colors, src)
+        if color not in colors:
+            print(f"papirus-folder-color: unknown colour {color!r}", file=sys.stderr)
+            return 1
+        made = build_overlay(args.mode, color, src)
+    except Exception as exc:  # never let a theme switch break the desktop
+        print(f"papirus-folder-color: {exc}", file=sys.stderr)
+        return 1
+
+    if not args.quiet:
+        print(f"papirus-folder-color: {args.mode} / {color} ({made} icon links)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

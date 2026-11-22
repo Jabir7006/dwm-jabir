@@ -7,6 +7,21 @@
 #include <string.h>
 #include <ctype.h>
 
+static int
+ensure_capacity(TomlDoc *doc)
+{
+	if (doc->n < doc->capacity)
+		return 1;
+	int new_capacity = doc->capacity ? doc->capacity * 2 : TOML_INITIAL_CAPACITY;
+	TomlEntry *entries = realloc(doc->entries,
+	                             (size_t)new_capacity * sizeof(*entries));
+	if (!entries)
+		return 0;
+	doc->entries = entries;
+	doc->capacity = new_capacity;
+	return 1;
+}
+
 static char *
 strtrim(char *s)
 {
@@ -69,7 +84,7 @@ parse_inline_table(const char *p, TomlDoc *doc, const char *section, int tidx)
 		/* skip whitespace and commas between pairs */
 		while (isspace((unsigned char)*p) || *p == ',') p++;
 		if (*p == '}' || *p == '\0') break;
-		if (doc->n >= TOML_MAX_ENTRIES) break;
+		if (!ensure_capacity(doc)) break;
 
 		/* key (unquoted identifier) */
 		const char *kstart = p;
@@ -143,6 +158,8 @@ toml_parse(const char *path, TomlDoc *doc)
 {
 	FILE *f = fopen(path, "r");
 	if (!f) return 0;
+	if (!doc->entries)
+		doc->capacity = 0;
 	doc->n = 0;
 	char line[4096];
 	char cur_section[TOML_MAX_STR] = "";
@@ -251,7 +268,7 @@ toml_parse(const char *path, TomlDoc *doc)
 		}
 
 		/* ── standard scalar / array value ── */
-		if (doc->n >= TOML_MAX_ENTRIES) continue;
+		if (!ensure_capacity(doc)) continue;
 		TomlEntry *ent = &doc->entries[doc->n];
 		strncpy(ent->section, cur_section, TOML_MAX_STR - 1);
 		ent->section[TOML_MAX_STR - 1] = '\0';
@@ -303,6 +320,17 @@ toml_parse(const char *path, TomlDoc *doc)
 	}
 	fclose(f);
 	return 1;
+}
+
+void
+toml_free(TomlDoc *doc)
+{
+	if (!doc)
+		return;
+	free(doc->entries);
+	doc->entries = NULL;
+	doc->n = 0;
+	doc->capacity = 0;
 }
 
 const TomlValue *

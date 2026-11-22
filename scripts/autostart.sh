@@ -8,6 +8,7 @@
 xset s off
 xset s noblank
 xset -dpms
+xset r rate 200 50
 
 # Export display env to systemd/dbus in parallel (both are IPC round-trips)
 if command -v systemctl >/dev/null 2>&1; then
@@ -24,14 +25,34 @@ wait
 THEME_ENV="${XDG_CONFIG_HOME:-$HOME/.config}/dwm-titus/theme-env.sh"
 [ -f "$THEME_ENV" ] && . "$THEME_ENV"
 
-# Wallpaper (moved here from Phase 1 — does not need to block dwm startup)
-feh --randomize --bg-fill ~/Pictures/backgrounds/* 2>/dev/null &
+# Wallpaper: restore last pick (~/.fehbg written by feh on every apply),
+# fall back to random only on first boot. No daemon — feh sets and exits.
+if [ -x "$HOME/.fehbg" ]; then
+    "$HOME/.fehbg" 2>/dev/null &
+else
+    feh --randomize --bg-fill ~/Pictures/backgrounds/* 2>/dev/null &
+fi
 
 # Compositor
-picom -b 2>/dev/null &
+# picom -b 2>/dev/null &
 
 # Notification daemon
 dunst 2>/dev/null &
+
+# Clipboard history daemon (event-driven via clipnotify — 0% idle CPU, no polling)
+# CM_SELECTIONS=clipboard tracks only explicit copies, not every mouse selection.
+# CM_MAX_CLIPS caps stored history (soft limit; trims back to this at limit+10).
+# Wipe any prior history first so it never persists across reboot/session restart.
+# (The cache lives in $XDG_RUNTIME_DIR tmpfs, already wiped on reboot — this makes
+#  it explicit and also covers a dwm restart without a full reboot.)
+clipdel -d '.*' >/dev/null 2>&1
+CM_SELECTIONS=clipboard CM_MAX_CLIPS=100 clipmenud 2>/dev/null &
+
+# Thunar 
+thunar --daemon &
+
+# Kde Connect
+kdeconnect-indicator &
 
 # Polkit authentication agent (try common agents)
 for agent in \

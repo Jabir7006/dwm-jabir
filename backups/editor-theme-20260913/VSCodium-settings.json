@@ -1,0 +1,59 @@
+{
+  "editor.minimap.enabled": false,
+  "editor.fontSize": 16,
+  "editor.formatOnSave": true,
+  "editor.fontFamily": "Google Sans Code",
+  "editor.lineHeight": 1.6,
+  "editor.smoothScrolling": true,
+  "editor.cursorSmoothCaretAnimation": "on",
+  "workbench.list.smoothScrolling": true,
+  "terminal.integrated.smoothScrolling": true,
+  "editor.cursorBlinking": "expand",
+  "editor.wordWrap": "on",
+  "workbench.editor.wrapTabs": true,
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "editor.stickyScroll.enabled": false,
+  "explorer.compactFolders": false,
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/node_modules": true,
+  },
+  "workbench.colorCustomizations": {},
+  "breadcrumbs.enabled": false,
+  "sourceSwap.linuxPath": "/usr/share/vscodium/resources/app/product.json",
+  "workbench.colorTheme": "Evro Dark",
+  "workbench.iconTheme": "material-icon-theme",
+  "claudeCode.preferredLocation": "panel",
+  "claudeCode.environmentVariables": [
+    {
+      "name": "ANTHROPIC_AUTH_TOKEN",
+      "value": "sk-GpRs3whH5hSYdo07Iq6IkYGBg3e9X6iSLviFKlTkC0SobVWo",
+    },
+    { "name": "ANTHROPIC_BASE_URL", "value": "https://agentrouter.org" },
+    { "name": "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "value": "1" },
+    { "name": "ANTHROPIC_MODEL", "value": "claude-opus-5" },
+  ],
+  "claudeCode.disableLoginPrompt": true,
+  "claudeCode.initialPermissionMode": "acceptEdits",
+  "claudeCode.archiveInactiveSessions": 0,
+  "claudeCode.allowDangerouslySkipPermissions": true,
+  "claudeCode.enableNewConversationShortcut": true,
+
+  //   "workbench.colorTheme": "Learn with Sumit Theme",
+}

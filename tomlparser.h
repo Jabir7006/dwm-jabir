@@ -6,9 +6,9 @@
 #pragma once
 #include <stddef.h>
 
-#define TOML_MAX_ENTRIES 512
 #define TOML_MAX_STR     512
 #define TOML_MAX_ARR      32
+#define TOML_INITIAL_CAPACITY 64
 
 typedef enum {
 	TOML_STRING = 0,
@@ -36,12 +36,16 @@ typedef struct {
 } TomlEntry;
 
 typedef struct {
-	TomlEntry entries[TOML_MAX_ENTRIES];
+	TomlEntry *entries;
 	int       n;
+	int       capacity;
 } TomlDoc;
 
 /* Parse a TOML file at path. Returns 1 on success, 0 on error. */
 int toml_parse(const char *path, TomlDoc *doc);
+
+/* Release storage allocated by toml_parse. */
+void toml_free(TomlDoc *doc);
 
 /* Get value from a [section] by key. Returns NULL if not found. */
 const TomlValue *toml_get(const TomlDoc *doc, const char *section,

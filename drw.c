@@ -4,6 +4,8 @@
 #include <string.h>
 #include <X11/Xlib.h>
 #include <X11/Xft/Xft.h>
+#include <X11/cursorfont.h>
+#include <X11/Xcursor/Xcursor.h>
 #include <Imlib2.h>
 
 #include "drw.h"
@@ -522,6 +524,42 @@ drw_font_getexts(Fnt *font, const char *text, unsigned int len, unsigned int *w,
 		*h = font->h;
 }
 
+/* Map the core X cursor glyphs used by the WM onto Xcursor theme names, so the
+ * pointer matches the theme (Bibata-Modern-Ice) and its size everywhere instead
+ * of falling back to the legacy core font cursor. The size comes from libXcursor
+ * itself, i.e. XCURSOR_SIZE / the Xcursor.size resource. Each entry lists theme
+ * names to try in order, since not every theme ships every name. */
+static Cursor
+loadxcursor(Display *dpy, int shape)
+{
+	static const struct {
+		int shape;
+		const char *names[2];
+	} table[] = {
+		{ XC_left_ptr,            { "left_ptr",            "default" } },
+		{ XC_sizing,              { "sizing",              "bd_double_arrow" } },
+		{ XC_bottom_right_corner, { "bottom_right_corner", "se-resize" } },
+		{ XC_bottom_left_corner,  { "bottom_left_corner",  "sw-resize" } },
+		{ XC_top_right_corner,    { "top_right_corner",    "ne-resize" } },
+		{ XC_top_left_corner,     { "top_left_corner",     "nw-resize" } },
+		{ XC_fleur,               { "fleur",               "size_all" } },
+	};
+	size_t i, j;
+	Cursor cur;
+
+	for (i = 0; i < LENGTH(table); i++) {
+		if (table[i].shape != shape)
+			continue;
+		for (j = 0; j < LENGTH(table[i].names); j++) {
+			if ((cur = XcursorLibraryLoadCursor(dpy, table[i].names[j])))
+				return cur;
+		}
+		break;
+	}
+
+	return XCreateFontCursor(dpy, shape); /* fallback: core X font cursor */
+}
+
 Cur *
 drw_cur_create(Drw *drw, int shape)
 {
@@ -530,7 +568,7 @@ drw_cur_create(Drw *drw, int shape)
 	if (!drw || !(cur = ecalloc(1, sizeof(Cur))))
 		return NULL;
 
-	cur->cursor = XCreateFontCursor(drw->dpy, shape);
+	cur->cursor = loadxcursor(drw->dpy, shape);
 
 	return cur;
 }

@@ -1,0 +1,43 @@
+{
+  "editor.minimap.enabled": false,
+  "editor.fontSize": 16,
+  "editor.formatOnSave": true,
+  "editor.fontFamily": "Google Sans Code",
+  "editor.lineHeight": 1.6,
+  "editor.smoothScrolling": true,
+  "editor.cursorSmoothCaretAnimation": "on",
+  "workbench.list.smoothScrolling": true,
+  "terminal.integrated.smoothScrolling": true,
+  "editor.cursorBlinking": "expand",
+  "editor.wordWrap": "on",
+  "workbench.editor.wrapTabs": true,
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "editor.stickyScroll.enabled": false,
+  "explorer.compactFolders": false,
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+  },
+
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/node_modules": true,
+  },
+  "workbench.colorCustomizations": {},
+  "breadcrumbs.enabled": false,
+  "sourceSwap.productJsonPath": "/opt/antigravity-ide/resources/app/product.json",
+  "workbench.colorTheme": "Evro Dark",
+
+  //   "workbench.colorTheme": "Learn with Sumit Theme",
+}

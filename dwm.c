@@ -301,6 +301,7 @@ static void zoom(const Arg *arg);
 /* hot-reload */
 static void load_hotkeys_toml(const char *user_path, const char *default_path);
 static void load_themes_toml(const char *user_path, const char *default_path);
+static void updateclientborders(void);
 static void load_rules_toml(const char *user_path, const char *default_path);
 static void notify_bad_config(const char *filename, const char *reason);
 static void reload_config(void);
@@ -367,6 +368,16 @@ static Rule         *rt_rules  = NULL;
 static int           rt_nrules = 0;
 /* Runtime border pixel width (initialized to 1; overridden by themes.toml) */
 static unsigned int  dyn_borderpx;
+/* Runtime outer/inner gap in pixels (initialized to 10; overridden by themes.toml) */
+static unsigned int  dyn_gappx;
+/* Runtime auto-float size, as a fraction of the monitor work area
+ * (initialized to 0.6; overridden by themes.toml [appearance] float_width/float_height) */
+static double        dyn_floatw;
+static double        dyn_floath;
+/* Runtime window magnet distance in pixels: while a floating window is dragged,
+ * its edges stick to the monitor work-area edges within this distance
+ * (initialized to 0 = off; overridden by themes.toml [appearance] snap) */
+static int           dyn_snap;
 /* inotify */
 static int           inotify_fd = -1;
 static int           inotify_wd = -1;
@@ -1659,14 +1670,20 @@ maprequest(XEvent *e)
 void
 monocle(Monitor *m)
 {
-	int w, h, x, y;
+	int w, h, x, y, g = (int)dyn_gappx;
 	Client *c;
-	
+
+	/* Never let a large gap collapse the work area to zero or negative. */
+	if (g < 0)
+		g = 0;
+	if (2 * g >= m->ww || 2 * g >= m->wh)
+		g = 0;
+
 	for (c = nexttiled(m->clients); c; c = nexttiled(c->next)) {
-		x = m->wx;
-		y = m->wy;
-		w = m->ww - 2 * c->bw;
-		h = m->wh - 2 * c->bw;
+		x = m->wx + g;
+		y = m->wy + g;
+		w = m->ww - 2 * g - 2 * c->bw;
+		h = m->wh - 2 * g - 2 * c->bw;
 		applysizehints(c, &x, &y, &w, &h, 0);
 		resizeclient(c, x, y, w, h);
 	}
@@ -1733,14 +1750,16 @@ movemouse(const Arg *arg)
 
 			nx = ocx + (ev.xmotion.x - x);
 			ny = ocy + (ev.xmotion.y - y);
-			if (abs(selmon->wx - nx) < snap)
-				nx = selmon->wx;
-			else if (abs((selmon->wx + selmon->ww) - (nx + WIDTH(c))) < snap)
-				nx = selmon->wx + selmon->ww - WIDTH(c);
-			if (abs(selmon->wy - ny) < snap)
-				ny = selmon->wy;
-			else if (abs((selmon->wy + selmon->wh) - (ny + HEIGHT(c))) < snap)
-				ny = selmon->wy + selmon->wh - HEIGHT(c);
+			if (dyn_snap > 0) {
+				if (abs(selmon->wx - nx) < dyn_snap)
+					nx = selmon->wx;
+				else if (abs((selmon->wx + selmon->ww) - (nx + WIDTH(c))) < dyn_snap)
+					nx = selmon->wx + selmon->ww - WIDTH(c);
+				if (abs(selmon->wy - ny) < dyn_snap)
+					ny = selmon->wy;
+				else if (abs((selmon->wy + selmon->wh) - (ny + HEIGHT(c))) < dyn_snap)
+					ny = selmon->wy + selmon->wh - HEIGHT(c);
+			}
 			if (!c->isfloating && selmon->lt[selmon->sellt]->arrange
 			&& (abs(nx - c->x) > snap || abs(ny - c->y) > snap))
 				togglefloating(NULL);
@@ -1818,6 +1837,17 @@ int
 noborder(Client *c)
 {
 	int monocle_layout = 0;
+
+	/* With gaps enabled the window no longer touches the screen edge, so
+	 * its border must stay visible even when it is the only window (or
+	 * monocle). With gaps disabled the original DWM rule applies:
+	 *   - lone tiled window filling the screen: no border
+	 *   - monocle: no border
+	 *   - fullscreen: no border
+	 *   - two or more tiled windows: border on all of them
+	 *   - floating windows: border (always) */
+	if (dyn_gappx > 0)
+		return 0;
 
 	if (&monocle == c->mon->lt[c->mon->sellt]->arrange)
 		monocle_layout = 1;
@@ -2983,6 +3013,22 @@ load_hotkeys_toml(const char *user_path, const char *default_path)
 }
 
 static void
+updateclientborders(void)
+{
+	Monitor *m;
+	Client *c;
+
+	if (!dpy || !scheme)
+		return;
+	for (m = mons; m; m = m->next)
+		for (c = m->clients; c; c = c->next)
+			XSetWindowBorder(dpy, c->win,
+				(c == m->sel ? scheme[SchemeSel][ColBorder].pixel
+				             : scheme[SchemeNorm][ColBorder].pixel));
+	XSync(dpy, False);
+}
+
+static void
 load_themes_toml(const char *user_path, const char *default_path)
 {
 	static TomlDoc doc;
@@ -3046,6 +3092,7 @@ load_themes_toml(const char *user_path, const char *default_path)
 			}
 		}
 	}
+	updateclientborders();
 
 	/* Update borderpx if specified */
 	const TomlValue *vbpx = toml_get(&doc, "appearance", "borderpx");
@@ -3064,6 +3111,24 @@ load_themes_toml(const char *user_path, const char *default_path)
 			}
 		}
 	}
+
+	/* Update outer/inner window gaps if specified */
+	const TomlValue *vgap = toml_get(&doc, "appearance", "gaps");
+	if (vgap && vgap->type == TOML_INT && vgap->i >= 0)
+		dyn_gappx = (unsigned int)vgap->i;
+
+	/* Update auto-float size if specified (fraction of the monitor work area) */
+	const TomlValue *vfw = toml_get(&doc, "appearance", "float_width");
+	const TomlValue *vfh = toml_get(&doc, "appearance", "float_height");
+	if (vfw && (vfw->type == TOML_FLOAT || vfw->type == TOML_INT))
+		dyn_floatw = MIN(MAX(vfw->type == TOML_FLOAT ? vfw->d : (double)vfw->i, 0.1), 1.0);
+	if (vfh && (vfh->type == TOML_FLOAT || vfh->type == TOML_INT))
+		dyn_floath = MIN(MAX(vfh->type == TOML_FLOAT ? vfh->d : (double)vfh->i, 0.1), 1.0);
+
+	/* Update window magnet distance if specified (0 disables it) */
+	const TomlValue *vsnap = toml_get(&doc, "appearance", "snap");
+	if (vsnap && vsnap->type == TOML_INT)
+		dyn_snap = MIN(MAX(vsnap->i, 0), 200);
 
 	if (mons) {
 		drawbars();
@@ -3220,6 +3285,10 @@ setup(void)
 	/* clean up any zombies immediately */
 	sigchld(0);
 	dyn_borderpx = 1; /* initial value; overridden by themes.toml on load */
+	dyn_gappx    = 10; /* initial value; overridden by themes.toml on load */
+	dyn_floatw   = 0.6; /* initial value; overridden by themes.toml on load */
+	dyn_floath   = 0.6; /* initial value; overridden by themes.toml on load */
+	dyn_snap     = 0;   /* initial value; overridden by themes.toml on load */
 
 	/* the one line of bloat that would have saved a lot of time for a lot of people */
 	putenv("_JAVA_AWT_WM_NONREPARENTING=1");
@@ -3567,6 +3636,8 @@ tile(Monitor *m)
 	unsigned int i, n;
 	int mx = 0, my = 0, mh = 0, mw = 0;
 	int sx = 0, sy = 0, sh = 0, sw = 0;
+	int g = (int)dyn_gappx;          /* outer gap + inner gap */
+	int nm, ns, mhav, shav;
 	float mfacts, sfacts;
 	int mrest, srest;
 	Client *c;
@@ -3576,26 +3647,43 @@ tile(Monitor *m)
 	if (n == 0)
 		return;
 
-	sx = mx = m->wx;
-	sy = my = m->wy;
-	sh = mh = m->wh;
-	sw = mw = m->ww;
+	/* Never let a large gap collapse the work area to zero or negative. */
+	if (g < 0)
+		g = 0;
+	if (2 * g >= m->ww || 2 * g >= m->wh)
+		g = 0;
+
+	/* Outer gap: inset the whole layout from the screen edge. */
+	sx = mx = m->wx + g;
+	sy = my = m->wy + g;
+	sh = mh = m->wh - 2 * g;
+	sw = mw = m->ww - 2 * g;
 
 	if (m->nmaster && n > m->nmaster) {
-		sw = mw * (1 - m->mfact);
-		mw = mw * m->mfact;
-		sx = mx + mw;
+		/* Inner gap between the master column and the stack column. */
+		int avail = mw - g;
+		sw = avail * (1 - m->mfact);
+		mw = avail * m->mfact;
+		sx = mx + mw + g;
 	}
 
-	getfacts(m, mh, sh, &mfacts, &sfacts, &mrest, &srest);
+	/* Reserve space for the inner gaps between vertically stacked windows. */
+	nm   = MIN(n, m->nmaster);
+	ns   = n - nm;
+	mhav = mh - (nm > 0 ? (nm - 1) * g : 0);
+	shav = sh - (ns > 0 ? (ns - 1) * g : 0);
+	if (mhav < 1) mhav = 1;
+	if (shav < 1) shav = 1;
+
+	getfacts(m, mhav, shav, &mfacts, &sfacts, &mrest, &srest);
 
 	for (i = 0, c = nexttiled(m->clients); c; c = nexttiled(c->next), i++)
 		if (i < m->nmaster) {
-			resize(c, mx, my, mw - (2*c->bw), (mh / mfacts) * c->cfact + (i < mrest ? 1 : 0) - (2*c->bw), 0);
-			my += HEIGHT(c);
+			resize(c, mx, my, mw - (2*c->bw), (mhav / mfacts) * c->cfact + (i < mrest ? 1 : 0) - (2*c->bw), 0);
+			my += HEIGHT(c) + g;
 		} else {
-			resize(c, sx, sy, sw - (2*c->bw), (sh / sfacts) * c->cfact + ((i - m->nmaster) < srest ? 1 : 0) - (2*c->bw), 0);
-			sy += HEIGHT(c);
+			resize(c, sx, sy, sw - (2*c->bw), (shav / sfacts) * c->cfact + ((i - m->nmaster) < srest ? 1 : 0) - (2*c->bw), 0);
+			sy += HEIGHT(c) + g;
 		}
 }
 
@@ -3639,14 +3727,25 @@ togglefakefullscreen(const Arg *arg)
 void
 togglefloating(const Arg *arg)
 {
-	if (!selmon->sel)
+	Client *c = selmon->sel;
+	int wasfloating;
+
+	if (!c)
 		return;
-	if (selmon->sel->isfullscreen && selmon->sel->fakefullscreen != 1) /* no support for fullscreen windows */
+	if (c->isfullscreen && c->fakefullscreen != 1) /* no support for fullscreen windows */
 		return;
-	selmon->sel->isfloating = !selmon->sel->isfloating || selmon->sel->isfixed;
-	if (selmon->sel->isfloating)
-		resize(selmon->sel, selmon->sel->x, selmon->sel->y,
-			selmon->sel->w, selmon->sel->h, 0);
+	wasfloating = c->isfloating;
+	c->isfloating = !c->isfloating || c->isfixed;
+	if (c->isfloating && !wasfloating) {
+		/* Tiled -> floating: hand the window a sensible centered float size
+		 * instead of keeping whatever geometry the tiling layout gave it. */
+		Monitor *m = c->mon;
+		int w = (int)(m->ww * dyn_floatw + 0.5);
+		int h = (int)(m->wh * dyn_floath + 0.5);
+		resize(c, m->wx + (m->ww - w) / 2, m->wy + (m->wh - h) / 2, w, h, 0);
+	} else if (c->isfloating) {
+		resize(c, c->x, c->y, c->w, c->h, 0);
+	}
 	arrange(selmon);
 }
 
