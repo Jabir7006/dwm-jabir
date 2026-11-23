@@ -32,25 +32,26 @@ clean:
 install: all
 	@echo ""
 	@echo "==> Installing dwm binary and man page..."
-	install -Dm755 dwm ${DESTDIR}${PREFIX}/bin/dwm
-	sed "s/VERSION/${VERSION}/g" dwm.1 | install -Dm644 /dev/stdin ${DESTDIR}${MANPREFIX}/man1/dwm.1
+	install -Dm755 dwm "${DESTDIR}${PREFIX}/bin/dwm"
+	sed "s/VERSION/${VERSION}/g" dwm.1 | install -Dm644 /dev/stdin "${DESTDIR}${MANPREFIX}/man1/dwm.1"
 	@echo "==> Setting up X session entries..."
 	if [ ! -d "${DESTDIR}/usr/share/xsessions" ]; then \
 		mkdir -p "${DESTDIR}/usr/share/xsessions"; \
 	fi
 	install -Dm644 dwm.desktop "${DESTDIR}/usr/share/xsessions/"
-	install -Dm644 scripts/.xinitrc ${USER_HOME}/.xinitrc
+	install -Dm644 scripts/.xinitrc "${USER_HOME}/.xinitrc"
 	@echo "==> Syncing local repo to data dir..."
-	mkdir -p ${DATA_DIR}
-	if [ "$$(realpath .)" != "$$(realpath ${DATA_DIR})" ]; then \
-		cp -rf . ${DATA_DIR}/; \
+	mkdir -p "${DATA_DIR}"
+	if [ "$$(realpath .)" != "$$(realpath "${DATA_DIR}")" ]; then \
+		cp -rf . "${DATA_DIR}"/; \
 	fi
 	@echo "==> Installing config directories..."
 	mkdir -p "${CFG_DIR}"
 	for dir in config/*/; do \
-		dst=${CFG_DIR}/$$(basename "$$dir"); \
+		dst="${CFG_DIR}/$$(basename "$$dir")"; \
 		[ -L "$$dst" ] && rm -f "$$dst"; \
-		cp -rfL --remove-destination "$$dir" "$$dst"; \
+		mkdir -p "$$dst"; \
+		cp -rfL --remove-destination "$$dir". "$$dst"/; \
 	done
 	@echo "==> Installing scripts to PATH..."
 	for f in scripts/*; do \
@@ -64,8 +65,8 @@ install: all
 	test -f "${CFG_DIR}/dwm-titus/themes.toml"  || install -Dm644 config/dwm-titus/themes.toml  "${CFG_DIR}/dwm-titus/themes.toml"
 	test -f "${CFG_DIR}/dwm-titus/window-rules.toml" || install -Dm644 config/dwm-titus/window-rules.toml "${CFG_DIR}/dwm-titus/window-rules.toml"
 	@echo "==> Installing font aliases for cross-distro naming..."
-	mkdir -p ${CFG_DIR}/fontconfig/conf.d
-	if [ ! -f ${CFG_DIR}/fontconfig/conf.d/50-meslolgs-nerd-font-aliases.conf ]; then \
+	mkdir -p "${CFG_DIR}/fontconfig/conf.d"
+	if [ ! -f "${CFG_DIR}/fontconfig/conf.d/50-meslolgs-nerd-font-aliases.conf" ]; then \
 		{ \
 			printf '%s\n' '<?xml version="1.0"?>'; \
 			printf '%s\n' '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">'; \
@@ -92,23 +93,23 @@ install: all
 			printf '%s\n' '    </prefer>'; \
 			printf '%s\n' '  </alias>'; \
 			printf '%s\n' '</fontconfig>'; \
-		} > ${CFG_DIR}/fontconfig/conf.d/50-meslolgs-nerd-font-aliases.conf; \
+		} > "${CFG_DIR}/fontconfig/conf.d/50-meslolgs-nerd-font-aliases.conf"; \
 	else \
 		echo "  Preserving existing Meslo font alias file."; \
 	fi
 	fc-cache -f >/dev/null 2>&1 || true
 	@echo "==> Fixing ownership and permissions..."
 	for dir in "${USER_HOME}/.local" "${USER_HOME}/.local/share" "${CFG_DIR}"; do \
-		if [ "$$(stat -c %u "$$dir")" = 0 ]; then chown ${OWNER}: "$$dir"; fi; \
+		if [ "$$(stat -c %u "$$dir")" = 0 ]; then chown "${OWNER}:" "$$dir"; fi; \
 	done
-	find ${DATA_DIR} -name '*.sh' -o -name '*.py' | xargs -r chmod +x
+	find "${DATA_DIR}" -type f \( -name '*.sh' -o -name '*.py' \) -print0 | xargs -0r chmod +x
 	for dir in config/*/; do \
 		b=$$(basename $$dir); \
-		find "${CFG_DIR}/$$b" -name '*.sh' -o -name '*.py' 2>/dev/null | xargs -r chmod +x; \
-		chown -R ${OWNER}: "${CFG_DIR}/$$b" 2>/dev/null || true; \
+		find "${CFG_DIR}/$$b" -type f \( -name '*.sh' -o -name '*.py' \) -print0 2>/dev/null | xargs -0r chmod +x; \
+		chown -R "${OWNER}:" "${CFG_DIR}/$$b" 2>/dev/null || true; \
 	done
-	chown -R ${OWNER}: "${CFG_DIR}/fontconfig" 2>/dev/null || true
-	chown -R ${OWNER}: "${DATA_DIR}" && chown ${OWNER}: "${USER_HOME}/.xinitrc" 2>/dev/null || true
+	chown -R "${OWNER}:" "${CFG_DIR}/fontconfig" 2>/dev/null || true
+	chown -R "${OWNER}:" "${DATA_DIR}" && chown "${OWNER}:" "${USER_HOME}/.xinitrc" 2>/dev/null || true
 	@echo ""
 	@echo "  dwm installed successfully."
 	@echo "  Log out and select 'dwm', or start with: startx"

@@ -44,7 +44,7 @@ cd ~/dwm-jabir
 
 | প্রশ্ন | ডিফল্ট | মানে |
 |---|---|---|
-| CachyOS kernel + optimized repos? (প্রথম প্রশ্ন) | Arch: no, CachyOS: yes | keyring আগে প্রস্তুত করে CPU-সমর্থিত repo Arch repo-র উপরে বসায় |
+| CachyOS kernel + optimized repos? (প্রথম প্রশ্ন) | fresh Arch: no; CachyOS বা আগে বাছা থাকলে: yes | keyring ও compatible pacman আগে প্রস্তুত করে CPU-সমর্থিত repo Arch repo-র উপরে বসায় |
 | XLibre instead of Xorg? | no | নতুন install-এ Xorg; আগে থেকে XLibre থাকলে সেটি রাখে |
 | সিস্টেম update করব? | yes | `pacman -Syu`; repo প্রস্তুত/পরিবর্তন হলে update বাধ্যতামূলক |
 | paru নাকি yay-bin? | paru | AUR helper না থাকলে |
@@ -56,9 +56,30 @@ cd ~/dwm-jabir
 
 স্ক্রিপ্টের সব prompt ও message ইংরেজিতে। CachyOS বেছে নিলে kernel এবং
 desktop package install-এর আগে signing key, keyring ও mirrorlist প্রস্তুত হয়।
+সাধারণ Arch pacman optimized architecture গ্রহণ না করলে generic CachyOS repo
+থেকে CachyOS pacman install করে support যাচাই করে; `Architecture = auto` রাখে।
 CPU অনুযায়ী generic, v3, v4 বা (শনাক্ত হলে) Zen 4/5 repo অগ্রাধিকার পায়।
 CachyOS repo-তে পাওয়া package সেখান থেকে আসে; বাকিগুলো Arch/AUR থেকে আসে।
 Repo bootstrap বা system upgrade ব্যর্থ হলে installer থামে।
+
+### মাঝপথে ব্যর্থ হলে বা আবার install করতে চাইলে
+
+```bash
+git pull --ff-only
+./install.sh
+```
+
+- আগে CachyOS repo/kernel বাছা থাকলে rerun-এ সেটিই default। Existing optimized
+  repo-র pacman compatibility kernel prompt-এ no দিলেও যাচাই/repair হয়।
+- Installed package `--needed` দিয়ে skip হয়; working AUR helper আবার build হয় না।
+  Repo section duplicate হয় না, একই config হলে আবার repo backup তৈরি হয় না।
+- Config আবার apply হয়; প্রতিবার আলাদা backup directory-তে আগের config থাকে।
+  একই path-এর backup দ্বিতীয়বার overwrite হয় না এবং config directory nested হয় না।
+- একসঙ্গে একই user-এর দুটি installer run চলবে না। Failed run-এর temporary
+  directory cleanup হয়; পরের run-এ আবার চেষ্টা করা যায়।
+- Backup failure হলে overwrite থামে। Package/app install অসম্পূর্ণ হলে installer
+  error status দেয়; error ঠিক করে আবার চালান। Signature check চালু থাকে।
+- `--no-deps` বা `--deploy-only`-এর সঙ্গে `--with-apps` দিলে app install-ও skip হয়।
 
 ---
 
@@ -159,6 +180,12 @@ sudo systemctl disable --now keyd
   signing key trust করে signed keyring/mirrorlist install করে, তারপর full update করে।
 - system clock ও ইন্টারনেট ঠিক আছে কি দেখুন। Signature checking বন্ধ করবেন না।
 
+**`x86_64_v3 ... does not have a valid architecture`**
+- Updated script pull করে আবার `./install.sh` চালান। Installer optimized repo
+  থেকে upgrade করার আগে CachyOS pacman bootstrap করে architecture support যাচাই করে।
+- Bootstrap dependency/conflict error হলে সেটি আগে ঠিক করুন; installer error দেখিয়ে
+  থামবে। `--ignorearch` দিয়ে CPU-অসামঞ্জস্যপূর্ণ package install করবেন না।
+
 **Cannot create `~/.local/bin`: Permission denied**
 - Installer তার ব্যবহৃত home directory ও deployment file-গুলো আগে থেকে
   root-owned থাকলে ownership ঠিক করে। `make install`-ও নতুন parent directory-র
@@ -198,7 +225,7 @@ dwm-jabir/
 install.sh কিছু overwrite করার আগে backup রাখে:
 
 ```
-~/.config-backup-YYYYmmdd-HHMMSS/
+~/.config-backup-YYYYmmdd-HHMMSS-PID/
 ```
 
 কিছু না হারিয়ে ফিরে যেতে চাইলে ওই ফোল্ডার থেকে কপি করুন।

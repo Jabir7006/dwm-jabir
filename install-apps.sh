@@ -7,7 +7,7 @@
 set -uo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$REPO_DIR"
+cd "$REPO_DIR" || exit 1
 
 RED=$'\e[31m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; CYAN=$'\e[36m'; NC=$'\e[0m'
 info() { printf '%s[INFO]%s %s\n' "$CYAN" "$NC" "$*"; }
@@ -17,11 +17,13 @@ err()  { printf '%s[FAIL]%s %s\n' "$RED" "$NC" "$*" >&2; }
 
 [[ $EUID -eq 0 ]] && { err "Do not run as root"; exit 1; }
 command -v pacman >/dev/null 2>&1 || { err "pacman is missing; Arch/CachyOS is required."; exit 1; }
+command -v sudo >/dev/null 2>&1 || { err "sudo is missing."; exit 1; }
+sudo -v || { err "sudo authentication failed"; exit 1; }
 
 read_list() {
   local f="$1"
   [[ -f "$f" ]] || return 0
-  grep -vE '^[[:space:]]*(#|$)' "$f" || true
+  awk '{ sub(/\r$/, ""); sub(/#.*/, ""); gsub(/^[[:space:]]+|[[:space:]]+$/, "") } NF' "$f"
 }
 
 SKIP_FILE="$REPO_DIR/packages/skip.txt"
@@ -30,7 +32,7 @@ is_skipped() { [[ -f "$SKIP_FILE" ]] && grep -qxF -- "$1" <(read_list "$SKIP_FIL
 filter_skips() {
   local p
   for p in "$@"; do
-    is_skipped "$p" && { info "skip: $p"; continue; }
+    is_skipped "$p" && { info "skip: $p" >&2; continue; }
     printf '%s\n' "$p"
   done
 }
@@ -42,7 +44,8 @@ find_helper() {
 FAILED=()
 
 # ── official ────────────────────────────────────────────────────────────
-mapfile -t OFF < <(filter_skips $(read_list "$REPO_DIR/packages/apps-official.txt"))
+mapfile -t OFF < <(read_list "$REPO_DIR/packages/apps-official.txt")
+mapfile -t OFF < <(filter_skips "${OFF[@]}")
 if ((${#OFF[@]})); then
   info "official apps (${#OFF[@]})..."
   if ! sudo pacman -S --needed --noconfirm "${OFF[@]}"; then
@@ -54,7 +57,8 @@ if ((${#OFF[@]})); then
 fi
 
 # ── AUR ─────────────────────────────────────────────────────────────────
-mapfile -t AUR < <(filter_skips $(read_list "$REPO_DIR/packages/apps-aur.txt"))
+mapfile -t AUR < <(read_list "$REPO_DIR/packages/apps-aur.txt")
+mapfile -t AUR < <(filter_skips "${AUR[@]}")
 if ((${#AUR[@]})); then
   HELPER="$(find_helper)"
   if [[ -z "$HELPER" ]]; then

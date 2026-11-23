@@ -15,9 +15,9 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_DIR"
 
 if [[ -t 1 ]]; then
-  RED=$'\e[31m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; CYAN=$'\e[36m'; BOLD=$'\e[1m'; NC=$'\e[0m'
+  RED=$'\e[31m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; CYAN=$'\e[36m'; NC=$'\e[0m'
 else
-  RED=; GREEN=; YELLOW=; CYAN=; BOLD=; NC=
+  RED=; GREEN=; YELLOW=; CYAN=; NC=
 fi
 info() { printf '%s[INFO]%s %s\n' "$CYAN" "$NC" "$*"; }
 ok()   { printf '%s[ OK ]%s %s\n' "$GREEN" "$NC" "$*"; }
@@ -25,7 +25,12 @@ warn() { printf '%s[WARN]%s %s\n' "$YELLOW" "$NC" "$*"; }
 err()  { printf '%s[FAIL]%s %s\n' "$RED" "$NC" "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
-trap 's=$?; err "Failed (line $LINENO, exit $s): $BASH_COMMAND"; exit $s' ERR
+handle_error() {
+  local status="$1" line="$2" failed_command="$3"
+  err "Failed (line $line, exit $status): $failed_command"
+  exit "$status"
+}
+trap 'handle_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 WITH_APPS=0
 NO_DEPS=0
@@ -103,7 +108,7 @@ ask_yes_no() {
 read_list() {
   local f="$1"
   [[ -f "$f" ]] || return 0
-  grep -vE '^[[:space:]]*(#|$)' "$f" || true
+  awk '{ sub(/\r$/, ""); sub(/#.*/, ""); gsub(/^[[:space:]]+|[[:space:]]+$/, "") } NF' "$f"
 }
 
 SKIP_FILE="$REPO_DIR/packages/skip.txt"
@@ -113,6 +118,22 @@ is_skipped() {
 
 PAC_FAILED=()
 AUR_FAILED=()
+TEMP_DIRS=()
+INSTALL_ERRORS=0
+
+new_temp_dir() {
+  local var_name="$1" created_dir
+  created_dir="$(mktemp -d)" || die "Could not create a temporary directory."
+  TEMP_DIRS+=("$created_dir")
+  printf -v "$var_name" '%s' "$created_dir"
+}
+
+cleanup_temp_dirs() {
+  local temp_path
+  for temp_path in "${TEMP_DIRS[@]}"; do
+    rm -rf -- "$temp_path"
+  done
+}
 
 pac_install() {
   local -a pkgs=()
@@ -138,7 +159,7 @@ HELPER=""
 
 build_aur_pkg() {
   local pkg="$1" bin="$2" tmp
-  tmp="$(mktemp -d)"
+  new_temp_dir tmp
   info "AUR build: $pkg"
   git clone --depth=1 "https://aur.archlinux.org/${pkg}.git" "$tmp/$pkg" >/dev/null
   ( cd "$tmp/$pkg" && makepkg -si --noconfirm )
@@ -148,8 +169,16 @@ build_aur_pkg() {
 
 ensure_helper() {
   HELPER=""
-  if command -v paru >/dev/null 2>&1; then HELPER=paru; return 0; fi
-  if command -v yay  >/dev/null 2>&1; then HELPER=yay;  return 0; fi
+  local candidate
+  for candidate in paru yay; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      if "$candidate" --version >/dev/null 2>&1; then
+        HELPER="$candidate"
+        return 0
+      fi
+      warn "$candidate is installed but cannot run; attempting to reinstall an AUR helper."
+    fi
+  done
 
   local choice="paru"
   if ((!ASSUME_YES)); then
@@ -160,6 +189,15 @@ ensure_helper() {
     local ans
     read -rp "Choose [1/2, default 1]: " ans || true
     [[ "$ans" == "2" ]] && choice="yay-bin"
+  fi
+  local repo_helper=paru
+  [[ "$choice" != yay-bin ]] || repo_helper=yay
+  if pacman -Si "$repo_helper" >/dev/null 2>&1; then
+    if sudo pacman -S --noconfirm "$repo_helper" && "$repo_helper" --version >/dev/null 2>&1; then
+      HELPER="$repo_helper"
+      return 0
+    fi
+    warn "Repository helper installation failed; trying the AUR binary package."
   fi
   if [[ "$choice" == "yay-bin" ]]; then
     build_aur_pkg yay-bin yay
@@ -192,9 +230,16 @@ aur_install() {
 }
 
 # ── repository preparation (before any desktop packages) ────────────────
+has_cachyos_repos() {
+  grep -qE '^[[:space:]]*\[cachyos(-core|-extra)?(-(v3|v4|znver4))?\]' "$PACMAN_CONF"
+}
+
 select_kernel() {
   local default=n
-  [[ "$DISTRO_ID" == "cachyos" ]] && default=y
+  if [[ "$DISTRO_ID" == "cachyos" ]] || has_cachyos_repos || \
+      pacman -Qq linux-cachyos >/dev/null 2>&1; then
+    default=y
+  fi
   if ask_yes_no "Install CachyOS kernel and prioritize CPU-optimized CachyOS repositories?" "$default"; then
     [[ "$(uname -m)" == "x86_64" ]] || die "CachyOS repositories require x86_64."
     USE_CACHYOS=1
@@ -216,7 +261,7 @@ select_xserver() {
 setup_xlibre_repo() {
   local tmp fingerprint=0C92313001CFCA27627B9098B97F7C613F359424
   command -v curl >/dev/null 2>&1 || die "curl is required to download the XLibre signing key."
-  tmp="$(mktemp -d)"
+  new_temp_dir tmp
   if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 \
       https://packages.xlibre.net/arch/xlibre-archlinux.asc -o "$tmp/xlibre.asc"; then
     rm -rf "$tmp"
@@ -231,6 +276,7 @@ setup_xlibre_repo() {
   rm -rf "$tmp"
   if ! grep -qE '^\[xlibre-stable\][[:space:]]*$' "$PACMAN_CONF"; then
     sudo cp -a "$PACMAN_CONF" "$PACMAN_CONF.dwm-backup-$(date +%Y%m%d-%H%M%S)"
+    # shellcheck disable=SC2016 # pacman expands the literal $arch placeholder.
     printf '\n[xlibre-stable]\nSigLevel = Required DatabaseOptional\nServer = https://packages.xlibre.net/arch/stable/$arch\n' \
       | sudo tee -a "$PACMAN_CONF" >/dev/null
   fi
@@ -238,7 +284,7 @@ setup_xlibre_repo() {
 }
 
 setup_cachyos_repos() {
-  local tmp level="" mirror fingerprint=882DCFE48E2051D48E2562ABF3B607488DB35A47
+  local tmp level="" mirror required_arch=x86_64 fingerprint=882DCFE48E2051D48E2562ABF3B607488DB35A47
   info "Preparing CachyOS signing keys and optimized repositories..."
   sudo pacman-key --init
   sudo pacman-key --populate archlinux
@@ -249,7 +295,7 @@ setup_cachyos_repos() {
 
   # Bootstrap only the signed keyring/mirrorlists, even if a previous run left
   # broken third-party repositories in pacman.conf. No hardcoded package versions.
-  tmp="$(mktemp -d)"
+  new_temp_dir tmp
   awk '/^[[:space:]]*\[/ && $0 !~ /^[[:space:]]*\[options\]/ { exit } { print }' \
     "$PACMAN_CONF" > "$tmp/pacman.conf"
   printf '\n[cachyos]\nSigLevel = Required DatabaseOptional\nServer = https://mirror.cachyos.org/repo/x86_64/cachyos\n' >> "$tmp/pacman.conf"
@@ -270,31 +316,59 @@ setup_cachyos_repos() {
   elif /lib/ld-linux-x86-64.so.2 --help | grep -F 'x86-64-v3 (supported, searched)' >/dev/null; then
     level=v3
   fi
+  case "$level" in
+    v3) required_arch=x86_64_v3 ;;
+    v4|znver4) required_arch=x86_64_v4 ;;
+  esac
+  printf '[options]\nArchitecture = auto\n' > "$tmp/architecture.conf"
+  # Arch's pacman accepts only x86_64 for "auto". CachyOS's fork also
+  # recognizes CPU-supported v2/v3/v4 packages; bootstrap it before -Syu.
+  # Avoid --needed here: a same-version Arch build must still be replaced.
+  if ! pacman-conf --config "$tmp/architecture.conf" Architecture | grep -Fx "$required_arch" >/dev/null; then
+    info "Installing CachyOS pacman for $required_arch package support..."
+    if ! sudo pacman --config "$tmp/pacman.conf" -S --noconfirm cachyos/pacman; then
+      rm -rf "$tmp"
+      die "CachyOS pacman bootstrap failed; optimized repositories have not been enabled."
+    fi
+    if ! pacman-conf --config "$tmp/architecture.conf" Architecture | grep -Fx "$required_arch" >/dev/null; then
+      rm -rf "$tmp"
+      die "pacman still does not accept $required_arch packages after bootstrap."
+    fi
+  fi
   mirror="${level:-generic}"
   info "CachyOS repository optimization: $mirror"
   : > "$tmp/repos.conf"
   if [[ -n "$level" ]]; then
     mirror=v3; [[ "$level" == v4 || "$level" == znver4 ]] && mirror=v4
-    printf '[cachyos-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror" >> "$tmp/repos.conf"
-    printf '[cachyos-core-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror" >> "$tmp/repos.conf"
-    printf '[cachyos-extra-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror" >> "$tmp/repos.conf"
+    {
+      printf '[cachyos-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror"
+      printf '[cachyos-core-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror"
+      printf '[cachyos-extra-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror"
+    } >> "$tmp/repos.conf"
   fi
   printf '[cachyos]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-mirrorlist\n\n' >> "$tmp/repos.conf"
   # Replace stable CachyOS sections and place them BEFORE Arch repositories.
   # Keep separately configured testing/custom repositories intact.
   awk -v repos="$tmp/repos.conf" '
     /^[[:space:]]*\[/ {
+      options = ($0 ~ /^[[:space:]]*\[options\]/)
       skip = ($0 ~ /^[[:space:]]*\[(cachyos|cachyos(-core|-extra)?-(v3|v4|znver4))\]/)
       if (!inserted && $0 !~ /^[[:space:]]*\[options\]/) {
         while ((getline line < repos) > 0) print line
         close(repos); inserted = 1
       }
     }
+    options && /^[[:space:]]*Architecture[[:space:]]*=/ { next }
     !skip { print }
+    options && /^[[:space:]]*\[/ { print "Architecture = auto" }
     END { if (!inserted) while ((getline line < repos) > 0) print line }
   ' "$PACMAN_CONF" > "$tmp/updated.conf"
-  sudo cp -a "$PACMAN_CONF" "$PACMAN_CONF.dwm-backup-$(date +%Y%m%d-%H%M%S)"
-  sudo install -m644 "$tmp/updated.conf" "$PACMAN_CONF"
+  if ! cmp -s "$tmp/updated.conf" "$PACMAN_CONF"; then
+    sudo cp -a "$PACMAN_CONF" "$PACMAN_CONF.dwm-backup-$(date +%Y%m%d-%H%M%S)-$$"
+    sudo install -m644 "$tmp/updated.conf" "$PACMAN_CONF"
+  else
+    ok "CachyOS repositories are already configured."
+  fi
   rm -rf "$tmp"
   REPOS_CHANGED=1
 }
@@ -385,7 +459,7 @@ setup_shell() {
 }
 
 # ── backup + deploy ─────────────────────────────────────────────────────
-BACKUP_DIR="$HOME/.config-backup-$(date +%Y%m%d-%H%M%S)"
+BACKUP_DIR="$HOME/.config-backup-$(date +%Y%m%d-%H%M%S)-$$"
 
 ensure_user_dir() {
   local path="$1" parent resolved home_root
@@ -409,6 +483,18 @@ ensure_user_dir() {
   fi
   [[ -w "$path" && -x "$path" ]] \
     || die "Directory is not writable by $USER_NAME: $path (check ownership, ACLs, or a read-only filesystem)."
+}
+
+acquire_install_lock() {
+  local lock_path="$HOME/.local/state/dwm-jabir/install.lock"
+  command -v flock >/dev/null 2>&1 || die "flock is missing; install util-linux."
+  ensure_user_dir "$HOME/.local/state/dwm-jabir"
+  [[ ! -L "$lock_path" ]] || die "Installer lock must not be a symlink: $lock_path"
+  if [[ -f "$lock_path" && "$(stat -c %u "$lock_path")" == 0 ]]; then
+    sudo chown "$USER_NAME:$USER_GROUP" "$lock_path"
+  fi
+  exec {INSTALL_LOCK_FD}>>"$lock_path"
+  flock -n "$INSTALL_LOCK_FD" || die "Another dwm-jabir installer is already running for $USER_NAME."
 }
 
 prepare_user_paths() {
@@ -452,10 +538,12 @@ prepare_user_paths() {
 
 backup_path() {
   local p="$1" rel
-  [[ -e "$p" ]] || return 0
+  [[ -e "$p" || -L "$p" ]] || return 0
   rel="${p#"$HOME"/}"
+  # Keep the original copy when deployment touches the same path again.
+  [[ -e "$BACKUP_DIR/$rel" || -L "$BACKUP_DIR/$rel" ]] && return 0
   mkdir -p "$BACKUP_DIR/$(dirname "$rel")"
-  cp -a "$p" "$BACKUP_DIR/$rel" 2>/dev/null || true
+  cp -a "$p" "$BACKUP_DIR/$rel" || die "Backup failed for $p; the file has not been replaced."
 }
 
 deploy_file() {
@@ -466,16 +554,18 @@ deploy_file() {
 }
 
 deploy_file_sed() {
-  local src="$1" dst="$2"
+  local src="$1" dst="$2" replacement
   [[ -f "$src" ]] || return 0
   backup_path "$dst"
   mkdir -p "$(dirname "$dst")"
-  sed "s|/home/jabir|$HOME|g" "$src" > "$dst"
+  replacement="$(escape_sed_replacement "$HOME")"
+  sed "s|/home/jabir|$replacement|g" "$src" > "$dst"
   chmod 644 "$dst"
 }
 
 sync_dir() {
   local src="$1" dst="$2" sub="${3:-}"
+  [[ -d "$src" ]] || die "Deployment source directory is missing: $src"
   mkdir -p "$dst"
   if command -v rsync >/dev/null 2>&1; then
     if [[ -n "$sub" ]]; then
@@ -511,7 +601,10 @@ deploy_home() {
   [[ -x "$HOME/.local/share/numes/current/numes" ]] && \
     ln -sfn "$HOME/.local/share/numes/current/numes" "$HOME/.local/bin/numes"
 
-  chmod +x "$HOME"/custom-scripts/* "$HOME"/user_scripts/wayclick/*.sh 2>/dev/null || true
+  find "$HOME/custom-scripts" -maxdepth 1 -type f -exec chmod +x {} +
+  if [[ -d "$HOME/user_scripts/wayclick" ]]; then
+    find "$HOME/user_scripts/wayclick" -maxdepth 1 -type f -name '*.sh' -exec chmod +x {} +
+  fi
 }
 
 deploy_config_extras() {  info "top-level config files deploy..."
@@ -564,10 +657,18 @@ deploy_systemd_masks() {
 fix_home_paths() {
   [[ "$HOME" == "/home/jabir" ]] && return 0
   info "path fix: /home/jabir → $HOME"
-  local f
-  while IFS= read -r f; do
-    [[ -f "$f" ]] && sed -i "s|/home/jabir|$HOME|g" "$f"
-  done < <(grep -rIl '/home/jabir' "$HOME/.config" "$HOME/.local/share/applications" 2>/dev/null || true)
+  local f replacement
+  replacement="$(escape_sed_replacement "$HOME")"
+  while IFS= read -r -d '' f; do
+    [[ -f "$f" ]] && sed -i "s|/home/jabir|$replacement|g" "$f"
+  done < <(grep -rIlZ '/home/jabir' "$HOME/.config" "$HOME/.local/share/applications" 2>/dev/null || true)
+}
+
+escape_sed_replacement() {
+  local replacement="${1//\\/\\\\}"
+  replacement="${replacement//&/\\&}"
+  replacement="${replacement//|/\\|}"
+  printf '%s' "$replacement"
 }
 
 # ── build + lightdm ─────────────────────────────────────────────────────
@@ -630,7 +731,7 @@ setup_system_config() {
 
   if [[ -f "$etc/keyd/default.conf" ]]; then
     if ask_yes_no "Apply the bundled keyd keyboard remapping?" n; then
-      pac_install keyd
+      if ((!NO_DEPS)); then pac_install keyd; fi
       if pacman -Qq keyd >/dev/null 2>&1; then
         sudo install -Dm644 "$etc/keyd/default.conf" /etc/keyd/default.conf
         sudo systemctl enable --now keyd 2>/dev/null || warn "Could not enable the keyd service"
@@ -687,6 +788,11 @@ echo "║        dwm-jabir installer  (Arch)            ║"
 echo "╚═══════════════════════════════════════════════╝"
 echo ""
 
+trap cleanup_temp_dirs EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+acquire_install_lock
+
 if ((DEPLOY_ONLY)); then
   warn "--deploy-only: skipping packages, dwm build, and system configuration."
 elif ((NO_DEPS)); then
@@ -694,7 +800,9 @@ elif ((NO_DEPS)); then
 else
   select_kernel
   select_xserver
-  ((USE_CACHYOS)) && setup_cachyos_repos
+  if ((USE_CACHYOS)) || has_cachyos_repos; then
+    setup_cachyos_repos
+  fi
   # Existing XLibre repositories need their key repaired before the first sync,
   # including on reruns that keep Xorg as the selected server.
   if [[ "$XSERVER" == xlibre ]] || grep -qE '^\[xlibre(-stable|-oldstable|-beta)?\]' "$PACMAN_CONF"; then
@@ -761,13 +869,24 @@ if [[ -x "$REPO_DIR/scripts/theme-apply.sh" ]]; then
 fi
 
 if ((WITH_APPS)); then
-  info "optional apps install..."
-  "$REPO_DIR/install-apps.sh" || warn "install-apps.sh failed to install some packages."
+  if ((NO_DEPS || DEPLOY_ONLY)); then
+    info "Skipping optional apps because package installation is disabled."
+  else
+    info "optional apps install..."
+    if ! "$REPO_DIR/install-apps.sh"; then
+      warn "install-apps.sh failed to install some packages."
+      INSTALL_ERRORS=1
+    fi
+  fi
 fi
 
 echo ""
 echo "╔═══════════════════════════════════════════════╗"
-echo "║          Installation Complete!               ║"
+if ((${#PAC_FAILED[@]} || ${#AUR_FAILED[@]} || INSTALL_ERRORS)); then
+  echo "║     Installation finished with errors         ║"
+else
+  echo "║          Installation Complete!               ║"
+fi
 echo "╚═══════════════════════════════════════════════╝"
 echo ""
 if ((DEPLOY_ONLY)); then
@@ -790,3 +909,7 @@ if ((${#AUR_FAILED[@]})); then
   warn "Not installed (AUR): ${AUR_FAILED[*]}"
 fi
 echo ""
+if ((${#PAC_FAILED[@]} || ${#AUR_FAILED[@]} || INSTALL_ERRORS)); then
+  warn "Some packages could not be installed. Resolve the errors, then rerun ./install.sh."
+  exit 1
+fi
