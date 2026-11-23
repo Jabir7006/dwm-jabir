@@ -135,6 +135,50 @@ cleanup_temp_dirs() {
   done
 }
 
+start_install_logging() {
+  INSTALL_LOG="$HOME/.local/state/dwm-jabir/install-$(date +%Y%m%d-%H%M%S)-$$.log"
+  (umask 077; : > "$INSTALL_LOG")
+  exec > >(exec {INSTALL_LOCK_FD}>&-; tee -a "$INSTALL_LOG") 2>&1
+  info "Installation log: $INSTALL_LOG"
+}
+
+pacman_run() {
+  local attempt status attempt_log index arg has_config=0
+  local -a args=("$@") transaction_status=()
+  new_temp_dir attempt_log
+  attempt_log="$attempt_log/pacman.log"
+  for arg in "${args[@]}"; do [[ "$arg" != --config ]] || has_config=1; done
+  for ((attempt=1; attempt<=3; attempt++)); do
+    if sudo pacman "${args[@]}" 2>&1 | tee "$attempt_log"; then
+      return 0
+    else
+      transaction_status=("${PIPESTATUS[@]}")
+      status="${transaction_status[0]}"
+      ((status != 0)) || status=1
+    fi
+    if ((attempt == 3)) || ! grep -qiE 'failed retrieving file|HTTP/[0-9.]+|HTTP2|404|timed out|could not resolve|connection reset|protocol_error' "$attempt_log"; then
+      return "$status"
+    fi
+    warn "Package download failed; retrying automatically ($attempt/3). Cached successful downloads are kept."
+    if grep -q '404' "$attempt_log"; then
+      for index in "${!args[@]}"; do
+        case "${args[index]}" in
+          -Syu) args[index]=-Syyu ;;
+          -Sy) args[index]=-Syy ;;
+          -S)
+            if ((has_config == 0)); then
+              info "Refreshing package databases with a full upgrade before retrying stale package URLs."
+              pacman_run -Syyu --noconfirm || return "$?"
+            fi
+            ;;
+        esac
+      done
+    fi
+    sleep "$attempt"
+  done
+  return 1
+}
+
 pac_install() {
   local -a pkgs=()
   local p
@@ -144,12 +188,12 @@ pac_install() {
   done
   ((${#pkgs[@]})) || return 0
   info "pacman: ${pkgs[*]}"
-  if sudo pacman -S --needed --noconfirm "${pkgs[@]}"; then
+  if pacman_run -S --needed --noconfirm "${pkgs[@]}"; then
     return 0
   fi
   warn "Batch installation failed; retrying packages individually."
   for p in "${pkgs[@]}"; do
-    sudo pacman -S --needed --noconfirm "$p" || PAC_FAILED+=("$p")
+    pacman_run -S --needed --noconfirm "$p" || PAC_FAILED+=("$p")
   done
   return 0
 }
@@ -193,7 +237,7 @@ ensure_helper() {
   local repo_helper=paru
   [[ "$choice" != yay-bin ]] || repo_helper=yay
   if pacman -Si "$repo_helper" >/dev/null 2>&1; then
-    if sudo pacman -S --noconfirm "$repo_helper" && "$repo_helper" --version >/dev/null 2>&1; then
+    if pacman_run -S --noconfirm "$repo_helper" && "$repo_helper" --version >/dev/null 2>&1; then
       HELPER="$repo_helper"
       return 0
     fi
@@ -299,7 +343,7 @@ setup_cachyos_repos() {
   awk '/^[[:space:]]*\[/ && $0 !~ /^[[:space:]]*\[options\]/ { exit } { print }' \
     "$PACMAN_CONF" > "$tmp/pacman.conf"
   printf '\n[cachyos]\nSigLevel = Required DatabaseOptional\nServer = https://mirror.cachyos.org/repo/x86_64/cachyos\n' >> "$tmp/pacman.conf"
-  if ! sudo pacman --config "$tmp/pacman.conf" -Sy --needed --noconfirm \
+  if ! pacman_run --config "$tmp/pacman.conf" -Sy --needed --noconfirm \
       cachyos-keyring cachyos-mirrorlist cachyos-v3-mirrorlist cachyos-v4-mirrorlist; then
     rm -rf "$tmp"
     die "CachyOS keyring/mirrorlist installation failed; desktop packages have not been installed."
@@ -326,7 +370,7 @@ setup_cachyos_repos() {
   # Avoid --needed here: a same-version Arch build must still be replaced.
   if ! pacman-conf --config "$tmp/architecture.conf" Architecture | grep -Fx "$required_arch" >/dev/null; then
     info "Installing CachyOS pacman for $required_arch package support..."
-    if ! sudo pacman --config "$tmp/pacman.conf" -S --noconfirm cachyos/pacman; then
+    if ! pacman_run --config "$tmp/pacman.conf" -S --noconfirm cachyos/pacman; then
       rm -rf "$tmp"
       die "CachyOS pacman bootstrap failed; optimized repositories have not been enabled."
     fi
@@ -340,13 +384,15 @@ setup_cachyos_repos() {
   : > "$tmp/repos.conf"
   if [[ -n "$level" ]]; then
     mirror=v3; [[ "$level" == v4 || "$level" == znver4 ]] && mirror=v4
+    # shellcheck disable=SC2016 # pacman expands the literal $repo placeholders.
     {
-      printf '[cachyos-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror"
-      printf '[cachyos-core-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror"
-      printf '[cachyos-extra-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror"
+      printf '[cachyos-%s]\nSigLevel = Required DatabaseOptional\nServer = https://mirror.cachyos.org/repo/x86_64_%s/$repo\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror" "$mirror"
+      printf '[cachyos-core-%s]\nSigLevel = Required DatabaseOptional\nServer = https://mirror.cachyos.org/repo/x86_64_%s/$repo\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror" "$mirror"
+      printf '[cachyos-extra-%s]\nSigLevel = Required DatabaseOptional\nServer = https://mirror.cachyos.org/repo/x86_64_%s/$repo\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror" "$mirror"
     } >> "$tmp/repos.conf"
   fi
-  printf '[cachyos]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-mirrorlist\n\n' >> "$tmp/repos.conf"
+  # shellcheck disable=SC2016 # pacman expands the literal $repo placeholder.
+  printf '[cachyos]\nSigLevel = Required DatabaseOptional\nServer = https://mirror.cachyos.org/repo/x86_64/$repo\nInclude = /etc/pacman.d/cachyos-mirrorlist\n\n' >> "$tmp/repos.conf"
   # Replace stable CachyOS sections and place them BEFORE Arch repositories.
   # Keep separately configured testing/custom repositories intact.
   awk -v repos="$tmp/repos.conf" '
@@ -402,11 +448,11 @@ setup_xserver() {
       flags=(-S --needed)
     fi
     # Server + libinput avoids pulling every legacy driver through xlibre-meta.
-    sudo pacman "${flags[@]}" xlibre-xserver xlibre-input-libinput \
+    pacman_run "${flags[@]}" xlibre-xserver xlibre-input-libinput \
       || die "XLibre installation failed. Resolve the package conflict before retrying."
     pacman -Qq xlibre-xserver >/dev/null 2>&1 || die "XLibre server is missing."
   else
-    sudo pacman -S --needed --noconfirm xorg-server xf86-input-libinput \
+    pacman_run -S --needed --noconfirm xorg-server xf86-input-libinput \
       || die "Xorg installation failed."
     pacman -Qq xorg-server >/dev/null 2>&1 || die "Xorg server is missing."
   fi
@@ -415,7 +461,7 @@ setup_xserver() {
 # ── CachyOS kernel ──────────────────────────────────────────────────────
 setup_kernel() {
   ((USE_CACHYOS)) || return 0
-  sudo pacman -S --needed --noconfirm linux-cachyos linux-cachyos-headers \
+  pacman_run -S --needed --noconfirm linux-cachyos linux-cachyos-headers \
     || die "CachyOS kernel installation failed. Check the signature/conflict error above."
   pacman -Qq linux-cachyos >/dev/null 2>&1 || die "linux-cachyos is missing."
   pacman -Qq linux-cachyos-headers >/dev/null 2>&1 || die "linux-cachyos-headers is missing."
@@ -426,6 +472,36 @@ setup_kernel() {
     sudo grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null || warn "grub-mkconfig failed"
   fi
   ok "CachyOS kernel installed; reboot and check the boot entry."
+}
+
+setup_audio() {
+  local package
+  local -a conflicts=() flags=(-S --needed --noconfirm)
+  for package in jack jack2 jack2-dbus pulseaudio pulseaudio-alsa pulseaudio-bluetooth pipewire-media-session; do
+    pacman -Qq "$package" >/dev/null 2>&1 && conflicts+=("$package")
+  done
+  if ((${#conflicts[@]})); then
+    info "Replacing incompatible audio providers: ${conflicts[*]}"
+    info "Confirm pacman's replacement questions so JACK2/PulseAudio can be replaced atomically by PipeWire."
+    flags=(-S --needed)
+  fi
+  pacman_run "${flags[@]}" pipewire pipewire-audio pipewire-alsa pipewire-jack pipewire-pulse wireplumber \
+    || die "PipeWire installation failed. The exact conflict/download error is saved in the installation log."
+  ok "PipeWire audio packages installed; session services start on your next DWM login."
+}
+
+upgrade_system() {
+  local package
+  local -a flags=(-Syu --noconfirm) audio_targets=()
+  for package in jack jack2 jack2-dbus pulseaudio pulseaudio-alsa pulseaudio-bluetooth pipewire-media-session; do
+    if pacman -Qq "$package" >/dev/null 2>&1; then
+      info "The full upgrade will replace conflicting audio providers with the saved PipeWire stack."
+      flags=(-Syu --needed)
+      audio_targets=(pipewire pipewire-audio pipewire-alsa pipewire-jack pipewire-pulse wireplumber)
+      break
+    fi
+  done
+  pacman_run "${flags[@]}" "${audio_targets[@]}"
 }
 
 # ── network / DM / shell ────────────────────────────────────────────────
@@ -502,14 +578,19 @@ prepare_user_paths() {
   home_root="$(realpath "$HOME")"
   for path in "$HOME/.local/bin" "$HOME/.local/share/applications" \
       "$HOME/.local/share/fonts" "$HOME/.local/share/dwm-titus" \
+      "$HOME/.local/share/icons" \
       "$HOME/.config" "$HOME/custom-scripts" "$HOME/user_scripts" \
       "$HOME/Pictures/backgrounds"; do
     ensure_user_dir "$path"
   done
+  if [[ -d "$REPO_DIR/home/contained_apps" ]]; then
+    ensure_user_dir "$HOME/contained_apps"
+  fi
   # Repair only installer destinations left root-owned by a previous sudo build.
   local -a targets=("$HOME/.local/bin" "$HOME/.local/share/dwm-titus" \
-    "$HOME/.local/share/applications" "$HOME/.local/share/fonts" \
+    "$HOME/.local/share/applications" "$HOME/.local/share/fonts" "$HOME/.local/share/icons" \
     "$HOME/custom-scripts" "$HOME/user_scripts" "$HOME/Pictures/backgrounds")
+  [[ ! -d "$REPO_DIR/home/contained_apps" ]] || targets+=("$HOME/contained_apps")
   for path in "$REPO_DIR"/config/*/; do
     [[ -d "$path" ]] || continue
     name="$(basename "$path")"
@@ -521,6 +602,10 @@ prepare_user_paths() {
   done
   for name in starship.toml mimeapps.list user-dirs.dirs xdg-terminals.list; do
     targets+=("$HOME/.config/$name")
+  done
+  for path in "$REPO_DIR"/home/* "$REPO_DIR"/home/.[!.]* "$REPO_DIR"/home/..?*; do
+    [[ -f "$path" ]] || continue
+    targets+=("$HOME/$(basename "$path")")
   done
   for path in "${targets[@]}"; do
     [[ -e "$path" || -L "$path" ]] || continue
@@ -554,13 +639,13 @@ deploy_file() {
 }
 
 deploy_file_sed() {
-  local src="$1" dst="$2" replacement
+  local src="$1" dst="$2" mode="${3:-644}" replacement
   [[ -f "$src" ]] || return 0
   backup_path "$dst"
   mkdir -p "$(dirname "$dst")"
   replacement="$(escape_sed_replacement "$HOME")"
   sed "s|/home/jabir|$replacement|g" "$src" > "$dst"
-  chmod 644 "$dst"
+  chmod "$mode" "$dst"
 }
 
 sync_dir() {
@@ -580,10 +665,16 @@ sync_dir() {
 
 deploy_home() {
   info "home dotfiles deploy..."
-  local f
-  for f in .xprofile .profile .bash_profile .bashrc .zshrc .gtkrc-2.0 picom.conf; do
-    deploy_file "$REPO_DIR/home/$f" "$HOME/$f" 644
+  local f mode name
+  for f in "$REPO_DIR"/home/* "$REPO_DIR"/home/.[!.]* "$REPO_DIR"/home/..?*; do
+    [[ -f "$f" ]] || continue
+    name="$(basename "$f")"
+    [[ "$name" != .xinitrc ]] || continue
+    mode=644
+    [[ ! -x "$f" && "$f" != *.sh && "$f" != *.py ]] || mode=755
+    deploy_file_sed "$f" "$HOME/$name" "$mode"
   done
+  deploy_file_sed "$REPO_DIR/scripts/.xinitrc" "$HOME/.xinitrc" 755
 
   mkdir -p "$HOME/.local/bin"
   for f in "$REPO_DIR"/home/.local/bin/*; do
@@ -594,6 +685,11 @@ deploy_home() {
   mkdir -p "$HOME/custom-scripts" "$HOME/user_scripts"
   sync_dir "$REPO_DIR/home/custom-scripts/" "$HOME/custom-scripts/" custom-scripts
   sync_dir "$REPO_DIR/home/user_scripts/" "$HOME/user_scripts/" user_scripts
+  if [[ -d "$REPO_DIR/home/contained_apps" ]]; then
+    sync_dir "$REPO_DIR/home/contained_apps/" "$HOME/contained_apps/" contained-apps
+  fi
+  sync_dir "$REPO_DIR/scripts/" "$HOME/.local/share/dwm-titus/scripts/"
+  find "$HOME/.local/share/dwm-titus/scripts" -maxdepth 1 -type f -exec chmod +x {} +
 
   ln -sfn "$HOME/.local/share/dwm-titus/scripts/theme-apply.sh" "$HOME/.local/bin/theme-apply.sh"
   ln -sfn "$HOME/user_scripts/wayclick/wayclick-toggle.sh" "$HOME/.local/bin/wayclick"
@@ -609,9 +705,36 @@ deploy_home() {
 
 deploy_config_extras() {  info "top-level config files deploy..."
   local f
-  for f in starship.toml mimeapps.list user-dirs.dirs xdg-terminals.list; do
-    deploy_file "$REPO_DIR/config/$f" "$HOME/.config/$f" 644
+  for f in "$REPO_DIR"/config/*; do
+    [[ -f "$f" ]] || continue
+    deploy_file_sed "$f" "$HOME/.config/$(basename "$f")" 644
   done
+}
+
+setup_contained_apps() {
+  ((NO_DEPS || DEPLOY_ONLY)) && return 0
+  local wayclick_base="$HOME/contained_apps/uv/wayclick"
+  local wayclick_launcher="$HOME/user_scripts/wayclick/dusky_wayclick.sh"
+  [[ -f "$wayclick_base/runner.py" && -f "$wayclick_launcher" ]] || return 0
+  if [[ -x "$wayclick_base/.venv/bin/python" ]] && \
+      PYGAME_HIDE_SUPPORT_PROMPT=1 "$wayclick_base/.venv/bin/python" -c 'import evdev, pygame' >/dev/null 2>&1; then
+    ok "WayClick environment is ready."
+  else
+    info "Preparing the saved WayClick runner and its Python environment..."
+    rm -f "$wayclick_base/.build_marker_v10"
+    if ! bash "$wayclick_launcher" --setup; then
+      warn "WayClick setup failed; see the installation log."
+      INSTALL_ERRORS=1
+    fi
+  fi
+  if ! id -nG "$USER_NAME" | tr ' ' '\n' | grep -Fx input >/dev/null; then
+    if ask_yes_no "Allow WayClick keyboard sounds to read input devices (requires a new login)?" n; then
+      sudo usermod -aG input "$USER_NAME"
+      info "Input access added; log out and back in before starting WayClick."
+    else
+      info "WayClick stays off until you grant input-device access."
+    fi
+  fi
 }
 
 deploy_applications() {
@@ -633,10 +756,51 @@ deploy_fonts() {
   command -v fc-cache >/dev/null 2>&1 && fc-cache -f >/dev/null 2>&1 || true
 }
 
+deploy_icons() {
+  [[ -d "$REPO_DIR/home/.local/share/icons" ]] || return 0
+  info "saved icon themes and launcher icons deploy..."
+  sync_dir "$REPO_DIR/home/.local/share/icons/" "$HOME/.local/share/icons/" icons
+}
+
+deploy_system_scripts() {
+  local script_path temporary_script_dir replacement
+  [[ -d "$REPO_DIR/system-config/usr/local/bin" ]] || return 0
+  new_temp_dir temporary_script_dir
+  replacement="$(escape_sed_replacement "$HOME")"
+  for script_path in "$REPO_DIR"/system-config/usr/local/bin/*; do
+    [[ -f "$script_path" ]] || continue
+    sed "s|/home/jabir|$replacement|g" "$script_path" > "$temporary_script_dir/$(basename "$script_path")"
+    sudo install -Dm755 "$temporary_script_dir/$(basename "$script_path")" "/usr/local/bin/$(basename "$script_path")"
+  done
+}
+
+setup_browser_appearance() {
+  local policy_dir source_policy filtered_dir
+  new_temp_dir filtered_dir
+  for policy_dir in /etc/brave/policies/managed /etc/opt/chrome/policies/managed /etc/chromium/policies/managed; do
+    source_policy="$REPO_DIR/system-config/reference$policy_dir/color.json"
+    [[ -f "$source_policy" ]] || continue
+    # Restore appearance only. Account, extension, and enterprise restrictions
+    # from reference policies are never applied by this installer.
+    python3 - "$source_policy" "$filtered_dir/color.json" <<'PY'
+import json, sys
+from pathlib import Path
+source = json.loads(Path(sys.argv[1]).read_text())
+colors = {key: source[key] for key in ("BrowserThemeColor", "BrowserColorScheme") if key in source}
+Path(sys.argv[2]).write_text(json.dumps(colors) + "\n")
+PY
+    sudo install -d -m755 "$policy_dir"
+    sudo install -m644 -o "$USER_NAME" -g "$USER_GROUP" "$filtered_dir/color.json" "$policy_dir/color.json"
+  done
+}
+
 deploy_wallpapers() {
   [[ -d "$REPO_DIR/wallpapers" ]] || return 0
   info "wallpapers deploy..."
   sync_dir "$REPO_DIR/wallpapers/" "$HOME/Pictures/backgrounds/"
+  # The exported .fehbg selects the exact saved wallpaper, not the first
+  # alphabetically sorted image in the collection.
+  [[ ! -x "$HOME/.fehbg" ]] || return 0
   local first
   first="$(find "$HOME/Pictures/backgrounds" -maxdepth 1 -type f | sort | head -1 || true)"
   if [[ -n "$first" ]]; then
@@ -661,7 +825,8 @@ fix_home_paths() {
   replacement="$(escape_sed_replacement "$HOME")"
   while IFS= read -r -d '' f; do
     [[ -f "$f" ]] && sed -i "s|/home/jabir|$replacement|g" "$f"
-  done < <(grep -rIlZ '/home/jabir' "$HOME/.config" "$HOME/.local/share/applications" 2>/dev/null || true)
+  done < <(grep -rIlZ '/home/jabir' "$HOME/.config" "$HOME/.local/share/applications" \
+    "$HOME/.local/bin" "$HOME/custom-scripts" "$HOME/user_scripts" 2>/dev/null || true)
 }
 
 escape_sed_replacement() {
@@ -685,6 +850,10 @@ build_dwm() {
   command -v make >/dev/null 2>&1 || die "make is missing; install base-devel."
   command -v cc   >/dev/null 2>&1 || die "C compiler is missing; install base-devel."
   info "dwm build + install (sudo)..."
+  if ! cmp -s "$REPO_DIR/config.def.h" "$REPO_DIR/config.h"; then
+    backup_path "$REPO_DIR/config.h"
+    install -m644 "$REPO_DIR/config.def.h" "$REPO_DIR/config.h"
+  fi
   if ! make -C "$REPO_DIR" clean all; then
     die "dwm build failed; see the error above."
   fi
@@ -722,10 +891,20 @@ setup_system_config() {
   local etc="$REPO_DIR/system-config/etc"
 
   if [[ -f "$etc/X11/xorg.conf.d/30-pointer-touchpad.conf" ]]; then
-    if ask_yes_no "Apply touchpad configuration (tapping, natural scroll, left-handed mouse)?" n; then
-      sudo install -Dm644 "$etc/X11/xorg.conf.d/30-pointer-touchpad.conf" \
+    if ask_yes_no "Apply saved pointer settings (left-handed physical mouse, normal touchpad)?" y; then
+      local pointer_config="$etc/X11/xorg.conf.d/30-pointer-touchpad.conf" pointer_tmp
+      if command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt --quiet --vm; then
+        new_temp_dir pointer_tmp
+        sed -n '/# Touchpad Specific Settings/,$p' "$pointer_config" > "$pointer_tmp/pointer.conf"
+        pointer_config="$pointer_tmp/pointer.conf"
+        info "Virtual pointer buttons keep the host's mapping; no second left/right reversal is applied."
+      fi
+      sudo install -Dm644 "$pointer_config" \
         /etc/X11/xorg.conf.d/30-pointer-touchpad.conf
+      printf 'yes\n' > "$HOME/.config/dwm-titus/input-settings-enabled"
       ok "touchpad config installed"
+    else
+      printf 'no\n' > "$HOME/.config/dwm-titus/input-settings-enabled"
     fi
   fi
 
@@ -773,7 +952,7 @@ setup_system_config() {
 
 check_critical() {
   local p missing=()
-  for p in make gcc libx11 libxft libxinerama imlib2 polybar rofi lightdm lightdm-slick-greeter; do
+  for p in make gcc libx11 libxft libxinerama imlib2 polybar rofi lightdm lightdm-slick-greeter pipewire-audio pipewire-jack pipewire-pulse wireplumber; do
     pacman -Qq "$p" >/dev/null 2>&1 || missing+=("$p")
   done
   if ((${#missing[@]})); then
@@ -792,6 +971,7 @@ trap cleanup_temp_dirs EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 acquire_install_lock
+start_install_logging
 
 if ((DEPLOY_ONLY)); then
   warn "--deploy-only: skipping packages, dwm build, and system configuration."
@@ -810,15 +990,16 @@ else
   fi
   if ((REPOS_CHANGED)); then
     info "Repositories prepared; a full system upgrade is required before installing packages."
-    sudo pacman -Syu --noconfirm || die "System upgrade failed; resolve the error before retrying."
+    upgrade_system || die "System upgrade failed; see $INSTALL_LOG for the exact error."
   elif ask_yes_no "Update the system (pacman -Syu)?" y; then
-    sudo pacman -Syu --noconfirm || die "System upgrade failed; resolve the error before retrying."
+    upgrade_system || die "System upgrade failed; see $INSTALL_LOG for the exact error."
   fi
 
   setup_kernel
   setup_firmware
   setup_microcode
   setup_xserver
+  setup_audio
 
   mapfile -t CORE_OFF < <(read_list "$REPO_DIR/packages/core-official.txt")
   pac_install "${CORE_OFF[@]}"
@@ -850,11 +1031,15 @@ else
 fi
 deploy_config_extras
 deploy_home
+setup_contained_apps
 deploy_applications
 deploy_fonts
+deploy_icons
 deploy_wallpapers
 fix_home_paths
 if ((!DEPLOY_ONLY)); then
+  deploy_system_scripts
+  setup_browser_appearance
   setup_lightdm
   setup_system_config
 fi
@@ -901,6 +1086,7 @@ echo "   2. log out → select dwm in LightDM → log in"
 echo "   3. check: polybar, rofi (SUPER+R), wallpaper, alacritty"
 echo ""
 echo "  Backup of old configs: $BACKUP_DIR"
+echo "  Installation log: $INSTALL_LOG"
 if ((${#PAC_FAILED[@]})); then
   echo ""
   warn "Not installed (official): ${PAC_FAILED[*]}"
