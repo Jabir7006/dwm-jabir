@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=A Wine application
+MimeType=text/x-ms-regedit;
+Exec=env WINEPREFIX="/home/jabir/.wine" /home/ubuntu/buildbot/runners/wine/lutris-4.21-x86_64/bin/wine start /ProgIDOpen regfile %f
+NoDisplay=true
+StartupNotify=true
+TryExec=/home/ubuntu/buildbot/runners/wine/lutris-4.21-x86_64/bin/wine

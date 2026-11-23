@@ -1,0 +1,35 @@
+{
+  "per_folder": true,
+  "default": {
+    "mode": "icons",
+    "sort": {
+      "key": "name",
+      "descending": false,
+      "folders_first": true
+    },
+    "show_hidden": false,
+    "grouped": false,
+    "zoom_icons": 4,
+    "zoom_compact": 1,
+    "zoom_details": 1,
+    "previews": true,
+    "columns": 7
+  },
+  "folders": {
+    "/run/media/jabir/New Volume1/Video": {
+      "mode": "compact",
+      "sort": {
+        "key": "name",
+        "descending": false,
+        "folders_first": true
+      },
+      "show_hidden": false,
+      "grouped": false,
+      "zoom_icons": 4,
+      "zoom_compact": 1,
+      "zoom_details": 1,
+      "previews": true,
+      "columns": 7
+    }
+  }
+}

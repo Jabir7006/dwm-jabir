@@ -5,4 +5,5 @@ Comment=Media center for Stremio-protocol addons
 Exec="/home/jabir/.local/bin/cineo-desktop"
 Icon=cineo
 Terminal=false
+NoDisplay=true
 Categories=AudioVideo;Video;Player;

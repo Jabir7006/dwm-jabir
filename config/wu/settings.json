@@ -1,0 +1,21 @@
+// Wu settings
+//
+// For information on how to configure Wu, see the Wu
+// documentation: https://zed.dev/docs/configuring-zed
+//
+// To see all of Wu's default settings without changing your
+// custom settings, run `wu: open default settings` from the
+// command palette (cmd-shift-p / ctrl-shift-p)
+{
+  "session": {
+    "trust_all_worktrees": true
+  },
+  "base_keymap": "VSCode",
+  "theme": {
+    "mode": "system",
+    "light": "Wu Light",
+    "dark": "Wu Dark"
+  },
+  "ui_font_size": 16,
+  "buffer_font_size": 15,
+}

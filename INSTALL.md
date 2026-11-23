@@ -48,7 +48,7 @@ cd ~/dwm-jabir
 | XLibre instead of Xorg? | no | নতুন install-এ Xorg; আগে থেকে XLibre থাকলে সেটি রাখে |
 | সিস্টেম update করব? | yes | `pacman -Syu`; repo প্রস্তুত/পরিবর্তন হলে update বাধ্যতামূলক |
 | paru নাকি yay-bin? | paru | AUR helper না থাকলে |
-| Touchpad config? | no | tapping, natural scroll, left-handed mouse |
+| Saved pointer settings? | yes | physical mouse left-handed, touchpad normal; VM keeps host button mapping |
 | keyd keyboard remap? | no | আপনার custom key layout |
 | System tuning? | no | sysctl, zram, udev, Intel i915/tearfree |
 | fish default shell? | yes | `chsh -s /usr/bin/fish` |
@@ -61,6 +61,15 @@ desktop package install-এর আগে signing key, keyring ও mirrorlist প
 CPU অনুযায়ী generic, v3, v4 বা (শনাক্ত হলে) Zen 4/5 repo অগ্রাধিকার পায়।
 CachyOS repo-তে পাওয়া package সেখান থেকে আসে; বাকিগুলো Arch/AUR থেকে আসে।
 Repo bootstrap বা system upgrade ব্যর্থ হলে installer থামে।
+JACK2/PulseAudio conflict থাকলে প্রথম full upgrade-এই PipeWire stack একসঙ্গে
+নির্বাচিত হয়; pacman-এর replacement question confirm করুন। 404/HTTP2/timeout-এর
+ক্ষেত্রে download তিনবার পর্যন্ত retry হয়, 404 হলে database refresh করে। সব
+output `~/.local/state/dwm-jabir/install-*.log`-এ থাকে, তাই error scroll হয়ে হারায় না।
+
+বর্তমান desktop snapshot-এর scope ও excluded data: [SNAPSHOT.md](SNAPSHOT.md)।
+এতে fastfetch, icon/font assets, selected wallpaper, standalone Python tools,
+contained WayClick runner, user scripts ও `/usr/local/bin` helper-ও আছে। Graphical
+PATH, saved Polybar layout এবং MPV fallback একই installer-এ deploy হয়।
 
 ### মাঝপথে ব্যর্থ হলে বা আবার install করতে চাইলে
 
@@ -88,11 +97,12 @@ git pull --ff-only
 পুরো লিস্ট: `packages/core-official.txt` + `packages/core-aur.txt`
 
 - **DWM build:** base-devel, libx11, libxft, libxinerama, imlib2, libxcb, xcb-util
-- **X:** xorg-server + xf86-input-libinput (অথবা xlibre-xserver + xlibre-input-libinput), xorg-xinit/xrandr/xsetroot/xset/xprop/xrdb
+- **X:** xorg-server + xf86-input-libinput (অথবা xlibre-xserver + xlibre-input-libinput), xorg-xinit/xinput/xrandr/xsetroot/xset/xprop/xrdb
 - **Desktop:** polybar, rofi, dunst, feh, flameshot, dex, mate-polkit, clipmenu
 - **Files:** thunar, gvfs, tumbler, thunar-archive-plugin, xarchiver
 - **Theming:** nwg-look, qt6ct, dconf, papirus-icon-theme, matugen
-- **Audio:** pipewire, wireplumber, pavucontrol, alsa-utils
+- **Audio:** pipewire, pipewire-audio, pipewire-alsa/jack/pulse, wireplumber, pavucontrol, alsa-utils
+- **Script/UI dependencies:** GTK3/GTK4, python-gobject, Mesa, uv, yad, ffmpeg, yt-dlp, xdg-utils
 - **Network:** networkmanager, network-manager-applet, gnome-keyring
 - **Fonts:** noto-fonts (+cjk/emoji), ttf-meslo-nerd, ttf-jetbrains-mono-nerd
 - **Shell:** fish, starship, fastfetch, btop, eza, fzf, zoxide
@@ -157,6 +167,18 @@ sudo pacman -S --needed base-devel git
 **LightDM-এ login loop**
 - `.profile`-এ কোনো ভাঙা `source` লাইন আছে কি? (`[ -f ... ] &&` guard)
 - `~/.xsession-errors` দেখুন
+
+**Rofi-তে App Manager/script খুলছে না**
+- Updated `.profile` ও `.xprofile` graphical session-এ `~/.local/bin` ও
+  `~/custom-scripts` যোগ করে। Installer-এর পরে logout/login করুন।
+- Cineo, DeepAI Code, OpenCode ও Warp entry ইচ্ছাকৃতভাবে hidden; app data delete হয় না।
+- WayClick-এর environment normal install-এ তৈরি হয়। Input permission prompt-এ
+  অনুমতি দিলে নতুন login-এর পরে keyboard sounds ব্যবহার করা যাবে।
+
+**MPV process আছে, window নেই**
+- Saved MPV UI থাকে; `idle`/`force-window` চালু এবং renderer GPU/X11 fallback ব্যবহার করে।
+- Mesa install হয়। Codec/driver error থাকলে MPV-এর stderr দেখুন; installer log-এ
+  package failure এবং missing dependency থাকে।
 
 **touchpad কাজ করছে না**
 ```bash

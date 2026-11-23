@@ -5,3 +5,4 @@ Exec="/opt/claude-code/bin/claude" --handle-uri %u
 Type=Application
 NoDisplay=true
 MimeType=x-scheme-handler/claude-cli;
+TryExec=/opt/claude-code/bin/claude

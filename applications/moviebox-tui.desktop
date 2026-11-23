@@ -6,3 +6,4 @@ Icon=video-television
 Terminal=false
 Type=Application
 Categories=AudioVideo;Video;
+TryExec=kitty

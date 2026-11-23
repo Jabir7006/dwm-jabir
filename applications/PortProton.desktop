@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=PortProton
+Version=1.7.5
+Exec=env "/home/jabir/.local/share/portproton-patch/portproton.sh" %u
+Type=Application
+Terminal=False
+Categories=Game
+StartupNotify=true
+MimeType=application/x-ms-dos-executable;application/x-wine-extension-msp;application/x-msi;application/x-msdos-program;application/x-ms-shortcut;text/win-bat;x-scheme-handler/portproton;
+Path=/home/jabir/PortProton/data/scripts
+Icon=/home/jabir/PortProton/data/img/w.png
+TryExec=/home/jabir/.local/share/portproton-patch/portproton.sh

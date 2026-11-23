@@ -1,0 +1,1075 @@
+{
+  "config_version": "2",
+  "id": "mv-353e190917ea49aaa3d0cafbe6e67999",
+  "name": "Aetherspeak",
+  "author": "Hypeventure",
+  "description": "Aetherspeak Language but mapped into a keyboard.\r\nSounds from Chime's debut EP \"Aetherborne\"",
+  "tags": [
+    "gaming",
+    "edm",
+    "chime"
+  ],
+  "definition_method": "multi",
+  "audio_file": "W.ogg",
+  "soundpack_type": "Keyboard",
+  "options": {
+    "random_pitch": false,
+    "recommended_volume": 1
+  },
+  "definitions": {
+    "KeyQ": {
+      "audio_file": "Q.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyW": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyE": {
+      "audio_file": "E.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyR": {
+      "audio_file": "R.ogg",
+      "timing": [
+        [
+          0,
+          600.0450000000001
+        ]
+      ]
+    },
+    "KeyS": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyT": {
+      "audio_file": "T.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyU": {
+      "audio_file": "U.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyV": {
+      "audio_file": "V.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyX": {
+      "audio_file": "X.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyY": {
+      "audio_file": "Y.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyZ": {
+      "audio_file": "Z.ogg",
+      "timing": [
+        [
+          0,
+          599.637
+        ]
+      ]
+    },
+    "KeyA": {
+      "audio_file": "A.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyB": {
+      "audio_file": "B.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyC": {
+      "audio_file": "C.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyD": {
+      "audio_file": "D.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyF": {
+      "audio_file": "F.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyG": {
+      "audio_file": "G.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "MetaLeft": {
+      "audio_file": "foleyresponse.ogg",
+      "timing": [
+        [
+          0,
+          1594.1499999999999
+        ]
+      ]
+    },
+    "MetaRight": {
+      "audio_file": "foleyresponse.ogg",
+      "timing": [
+        [
+          0,
+          1594.1499999999999
+        ]
+      ]
+    },
+    "Enter": {
+      "audio_file": "foleyclick.ogg",
+      "timing": [
+        [
+          0,
+          620.816
+        ]
+      ]
+    },
+    "NumpadEnter": {
+      "audio_file": "foleyclick.ogg",
+      "timing": [
+        [
+          0,
+          620.816
+        ]
+      ]
+    },
+    "KeyH": {
+      "audio_file": "H.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyI": {
+      "audio_file": "I.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyJ": {
+      "audio_file": "J.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyK": {
+      "audio_file": "K.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyL": {
+      "audio_file": "L.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyM": {
+      "audio_file": "M.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyN": {
+      "audio_file": "N.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "KeyO": {
+      "audio_file": "O.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "KeyP": {
+      "audio_file": "P.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Digit1": {
+      "audio_file": "O.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Numpad1": {
+      "audio_file": "O.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Digit2": {
+      "audio_file": "T.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Numpad2": {
+      "audio_file": "T.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Digit3": {
+      "audio_file": "T.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Numpad3": {
+      "audio_file": "T.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Digit4": {
+      "audio_file": "F.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Numpad4": {
+      "audio_file": "F.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Digit5": {
+      "audio_file": "F.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Numpad5": {
+      "audio_file": "F.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Numpad6": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Digit6": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Digit7": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Numpad7": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Digit8": {
+      "audio_file": "E.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Numpad8": {
+      "audio_file": "E.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Digit9": {
+      "audio_file": "N.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Numpad9": {
+      "audio_file": "N.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Digit0": {
+      "audio_file": "Z.ogg",
+      "timing": [
+        [
+          0,
+          599.637
+        ]
+      ]
+    },
+    "Numpad0": {
+      "audio_file": "Z.ogg",
+      "timing": [
+        [
+          0,
+          599.637
+        ]
+      ]
+    },
+    "Minus": {
+      "audio_file": "D.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Equal": {
+      "audio_file": "E.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Backspace": {
+      "audio_file": "P.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Comma": {
+      "audio_file": "M.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Period": {
+      "audio_file": "L.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Slash": {
+      "audio_file": "K.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "ShiftLeft": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "ShiftRight": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "ControlLeft": {
+      "audio_file": "C.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "ControlRight": {
+      "audio_file": "C.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "AltLeft": {
+      "audio_file": "A.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "AltRight": {
+      "audio_file": "A.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "BracketLeft": {
+      "audio_file": "B.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "BracketRight": {
+      "audio_file": "B.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Backslash": {
+      "audio_file": "B.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "F1": {
+      "audio_file": "O.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "F2": {
+      "audio_file": "T.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "F3": {
+      "audio_file": "T.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "F4": {
+      "audio_file": "F.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "F5": {
+      "audio_file": "F.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "F6": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "F7": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "F8": {
+      "audio_file": "E.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "F9": {
+      "audio_file": "N.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "F10": {
+      "audio_file": "T.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "F11": {
+      "audio_file": "E.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "F12": {
+      "audio_file": "T.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "ArrowUp": {
+      "audio_file": "U.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "ArrowDown": {
+      "audio_file": "D.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "ArrowLeft": {
+      "audio_file": "L.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "ArrowRight": {
+      "audio_file": "R.ogg",
+      "timing": [
+        [
+          0,
+          600.0450000000001
+        ]
+      ]
+    },
+    "NumpadAdd": {
+      "audio_file": "P.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "NumpadSubtract": {
+      "audio_file": "M.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "NumpadMultiply": {
+      "audio_file": "S.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "NumpadDivide": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "PrintScreen": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "ScrollLock": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Pause": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Insert": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Home": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "PageUp": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Delete": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "End": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "PageDown": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "CapsLock": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Escape": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Backquote": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Tab": {
+      "audio_file": "W.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "NumLock": {
+      "audio_file": "N.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Space": {
+      "audio_file": "B.ogg",
+      "timing": [
+        [
+          0,
+          600
+        ]
+      ]
+    },
+    "Semicolon": {
+      "audio_file": "F.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "Quote": {
+      "audio_file": "F.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "ContextMenu": {
+      "audio_file": "G.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    },
+    "NumpadDecimal": {
+      "audio_file": "M.ogg",
+      "timing": [
+        [
+          0,
+          600.023
+        ]
+      ]
+    }
+  },
+  "created_at": "2026-10-30T07:48:24.725210400+00:00",
+  "version": "1",
+  "mappings": {
+    "16": "wayclick_slices/Q__0_600__fab48a4d.wav",
+    "17": "wayclick_slices/W__0_600__df42e158.wav",
+    "18": "wayclick_slices/E__0_600__ac0d4e98.wav",
+    "19": "wayclick_slices/R__0_600p045__529ce0fd.wav",
+    "31": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "20": "wayclick_slices/T__0_600__c0d374da.wav",
+    "22": "wayclick_slices/U__0_600__d3d579c1.wav",
+    "47": "wayclick_slices/V__0_600p023__16aab3b1.wav",
+    "45": "wayclick_slices/X__0_600p023__a34bc758.wav",
+    "21": "wayclick_slices/Y__0_600p023__a62f1578.wav",
+    "44": "wayclick_slices/Z__0_599p637__56123402.wav",
+    "30": "wayclick_slices/A__0_600__9357ca06.wav",
+    "48": "wayclick_slices/B__0_600__5b103a3a.wav",
+    "46": "wayclick_slices/C__0_600p023__fd91e789.wav",
+    "32": "wayclick_slices/D__0_600p023__c440bd41.wav",
+    "33": "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "34": "wayclick_slices/G__0_600p023__394fc2ed.wav",
+    "125": "wayclick_slices/foleyresponse__0_1594p15__00d14feb.wav",
+    "126": "wayclick_slices/foleyresponse__0_1594p15__00d14feb.wav",
+    "28": "wayclick_slices/foleyclick__0_620p816__6892fd6b.wav",
+    "96": "wayclick_slices/foleyclick__0_620p816__6892fd6b.wav",
+    "35": "wayclick_slices/H__0_600__28d1c446.wav",
+    "23": "wayclick_slices/I__0_600p023__481a05df.wav",
+    "36": "wayclick_slices/J__0_600p023__9105c164.wav",
+    "37": "wayclick_slices/K__0_600__f9298957.wav",
+    "38": "wayclick_slices/L__0_600p023__58f14f63.wav",
+    "50": "wayclick_slices/M__0_600p023__580c1e26.wav",
+    "49": "wayclick_slices/N__0_600__cffe0248.wav",
+    "24": "wayclick_slices/O__0_600p023__81cf1e97.wav",
+    "25": "wayclick_slices/P__0_600p023__b492ab7c.wav",
+    "2": "wayclick_slices/O__0_600p023__81cf1e97.wav",
+    "79": "wayclick_slices/O__0_600p023__81cf1e97.wav",
+    "3": "wayclick_slices/T__0_600__c0d374da.wav",
+    "80": "wayclick_slices/T__0_600__c0d374da.wav",
+    "4": "wayclick_slices/T__0_600__c0d374da.wav",
+    "81": "wayclick_slices/T__0_600__c0d374da.wav",
+    "5": "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "75": "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "6": "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "76": "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "77": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "7": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "8": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "71": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "9": "wayclick_slices/E__0_600__ac0d4e98.wav",
+    "72": "wayclick_slices/E__0_600__ac0d4e98.wav",
+    "10": "wayclick_slices/N__0_600__cffe0248.wav",
+    "73": "wayclick_slices/N__0_600__cffe0248.wav",
+    "11": "wayclick_slices/Z__0_599p637__56123402.wav",
+    "82": "wayclick_slices/Z__0_599p637__56123402.wav",
+    "12": "wayclick_slices/D__0_600p023__c440bd41.wav",
+    "13": "wayclick_slices/E__0_600__ac0d4e98.wav",
+    "14": "wayclick_slices/P__0_600p023__b492ab7c.wav",
+    "51": "wayclick_slices/M__0_600p023__580c1e26.wav",
+    "52": "wayclick_slices/L__0_600p023__58f14f63.wav",
+    "53": "wayclick_slices/K__0_600__f9298957.wav",
+    "42": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "54": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "29": "wayclick_slices/C__0_600p023__fd91e789.wav",
+    "97": "wayclick_slices/C__0_600p023__fd91e789.wav",
+    "56": "wayclick_slices/A__0_600__9357ca06.wav",
+    "100": "wayclick_slices/A__0_600__9357ca06.wav",
+    "26": "wayclick_slices/B__0_600__5b103a3a.wav",
+    "27": "wayclick_slices/B__0_600__5b103a3a.wav",
+    "43": "wayclick_slices/B__0_600__5b103a3a.wav",
+    "59": "wayclick_slices/O__0_600p023__81cf1e97.wav",
+    "60": "wayclick_slices/T__0_600__c0d374da.wav",
+    "61": "wayclick_slices/T__0_600__c0d374da.wav",
+    "62": "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "63": "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "64": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "65": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "66": "wayclick_slices/E__0_600__ac0d4e98.wav",
+    "67": "wayclick_slices/N__0_600__cffe0248.wav",
+    "68": "wayclick_slices/T__0_600__c0d374da.wav",
+    "87": "wayclick_slices/E__0_600__ac0d4e98.wav",
+    "88": "wayclick_slices/T__0_600__c0d374da.wav",
+    "103": "wayclick_slices/U__0_600__d3d579c1.wav",
+    "108": "wayclick_slices/D__0_600p023__c440bd41.wav",
+    "105": "wayclick_slices/L__0_600p023__58f14f63.wav",
+    "106": "wayclick_slices/R__0_600p045__529ce0fd.wav",
+    "78": "wayclick_slices/P__0_600p023__b492ab7c.wav",
+    "74": "wayclick_slices/M__0_600p023__580c1e26.wav",
+    "55": "wayclick_slices/S__0_600p023__1574b733.wav",
+    "98": "wayclick_slices/W__0_600__df42e158.wav",
+    "99": "wayclick_slices/W__0_600__df42e158.wav",
+    "70": "wayclick_slices/W__0_600__df42e158.wav",
+    "119": "wayclick_slices/W__0_600__df42e158.wav",
+    "110": "wayclick_slices/W__0_600__df42e158.wav",
+    "102": "wayclick_slices/W__0_600__df42e158.wav",
+    "104": "wayclick_slices/W__0_600__df42e158.wav",
+    "111": "wayclick_slices/W__0_600__df42e158.wav",
+    "107": "wayclick_slices/W__0_600__df42e158.wav",
+    "109": "wayclick_slices/W__0_600__df42e158.wav",
+    "58": "wayclick_slices/W__0_600__df42e158.wav",
+    "1": "wayclick_slices/W__0_600__df42e158.wav",
+    "41": "wayclick_slices/W__0_600__df42e158.wav",
+    "15": "wayclick_slices/W__0_600__df42e158.wav",
+    "69": "wayclick_slices/N__0_600__cffe0248.wav",
+    "57": "wayclick_slices/B__0_600__5b103a3a.wav",
+    "39": "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "40": "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "127": "wayclick_slices/G__0_600p023__394fc2ed.wav",
+    "83": "wayclick_slices/M__0_600p023__580c1e26.wav"
+  },
+  "defaults": [
+    "wayclick_slices/O__0_600p023__81cf1e97.wav",
+    "wayclick_slices/T__0_600__c0d374da.wav",
+    "wayclick_slices/F__0_600p023__e4e28433.wav",
+    "wayclick_slices/S__0_600p023__1574b733.wav",
+    "wayclick_slices/E__0_600__ac0d4e98.wav",
+    "wayclick_slices/N__0_600__cffe0248.wav",
+    "wayclick_slices/Z__0_599p637__56123402.wav",
+    "wayclick_slices/D__0_600p023__c440bd41.wav"
+  ]
+}

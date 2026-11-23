@@ -4,6 +4,7 @@ Name=Opencode
 Comment=Opencode
 Exec=app-manager --run-tui "TUI.float" opencode
 Terminal=false
+NoDisplay=true
 Type=Application
 Icon=opencode
 StartupNotify=true

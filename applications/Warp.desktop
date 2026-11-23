@@ -4,6 +4,7 @@ Name=Warp
 Comment=Warp
 Exec=app-manager --run-tui "TUI.float" /home/jabir/custom-scripts/warp_toggle.py
 Terminal=false
+NoDisplay=true
 Type=Application
 Icon=warp
 StartupNotify=true

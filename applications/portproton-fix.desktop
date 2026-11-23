@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=PortProton Helper
+Name[bn]=PortProton Helper
+Comment=Launch games, set FPS cap, repair the patch
+Exec=/home/jabir/.local/share/portproton-patch/menu.sh
+Path=/home/jabir/PortProton
+Terminal=true
+Icon=/home/jabir/PortProton/data/img/w.png
+Categories=Utility;
+StartupNotify=true
+TryExec=/home/jabir/.local/share/portproton-patch/menu.sh

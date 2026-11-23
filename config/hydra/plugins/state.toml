@@ -1,0 +1,470 @@
+[[plugins]]
+directory = "/home/jabir/.config/hydra/plugins/hydra.torrent/versions/f1d48dbd3086825ebeefb5b91fd222c7e0246fdacebe0d3181f23035a397ddd5"
+dev = false
+enabled = true
+failures = 0
+module_sha256 = "3039e6cd3e1c845e8d194942af6ff50123a043f12923eebb9d6cab52940deba2"
+
+[plugins.manifest]
+id = "hydra.torrent"
+name = "Torrent Downloader"
+author = "Hydra Team"
+version = "0.1.0"
+api = 1
+min_hydra = "1.0.7"
+license = "MIT OR Apache-2.0"
+welcome = "Add a magnet link or browse for a torrent file. This plugin imports libtorrent through its packaged native library. Native code runs with Hydra's operating-system permissions. Transfers upload pieces to peers while downloading. Seeding after download stops immediately by default; change Seeding time to keep sharing. Single-file torrents save as a file; multi-file torrents save the selected files in a folder."
+module = "plugin.wasm"
+memory_mb = 128
+publisher_key = "RWTaGOCLthz+jwx/MfJUHw9YUABimWtJvF0ZwDVlRgfspb7sD7iy+x8x"
+hooks = [
+    "resolve",
+    "check",
+]
+claims = [
+    "magnet:*",
+    "*://*/*.torrent",
+    "*://*/*.torrent?*",
+]
+
+[[plugins.manifest.input_actions]]
+label = "Browse Torrent File"
+extensions = ["torrent"]
+
+[[plugins.manifest.native_modules]]
+id = "torrent-engine"
+platform = "linux-x86_64"
+module = "torrent-linux-x86_64.so"
+
+[plugins.manifest.permissions]
+http = ["*"]
+sources = []
+cookies = []
+data = false
+exec = []
+native = ["torrent-engine"]
+exec_from_data = false
+
+[[plugins.manifest.settings]]
+key = "seed_seconds"
+label = "Seeding time after download (seconds)"
+type = "number"
+default = 0.0
+help = "Uploads also happen during download. Zero stops sharing once the selected files are complete."
+options = []
+
+[[plugins.manifest.settings]]
+key = "upload_limit"
+label = "Upload limit (bytes per second)"
+type = "number"
+default = 0.0
+help = "Zero means unlimited."
+options = []
+
+[plugins.signing.Verified]
+fingerprint = "b567c8a9f94ea0a5"
+
+[plugins.grants]
+http = ["*"]
+sources = []
+cookies = []
+data = false
+exec = []
+native = ["torrent-engine"]
+exec_from_data = false
+
+[plugins.pins]
+
+[plugins.settings]
+seed_seconds = 0.0
+upload_limit = 0.0
+
+[plugins.native_sha256]
+"torrent-linux-x86_64.so" = "15b9a887378dc991e2fae856e32c28cf4de7ab63adac3879e202a7f063283dda"
+
+[[plugins]]
+directory = "/home/jabir/.config/hydra/plugins/hydra.youtube/versions/ce3b6b6c8ccd21891f2929430a4daa6197cffe8fb3417b7c8777ba96e460f394"
+dev = false
+enabled = true
+failures = 0
+module_sha256 = "37f1bb713af963b7d1b6290ff9848c36586e6b645c677c03fa80d37265e1fea8"
+
+[plugins.manifest]
+id = "hydra.youtube"
+name = "YouTube Downloader"
+author = "Hydra Team"
+version = "0.1.0"
+api = 1
+license = "MIT OR Apache-2.0"
+welcome = "Install yt-dlp on PATH, or enable 'Download yt-dlp if it is missing' in this plugin’s settings. Choose an installed JavaScript runtime (Node or Deno) when YouTube requires it. Install ffmpeg on PATH to combine video and audio or extract MP3 audio. Add a YouTube video or playlist URL, then choose quality, audio and subtitles before downloading."
+module = "plugin.wasm"
+memory_mb = 64
+publisher_key = "RWTaGOCLthz+jwx/MfJUHw9YUABimWtJvF0ZwDVlRgfspb7sD7iy+x8x"
+hooks = [
+    "resolve",
+    "refresh",
+    "check",
+]
+claims = [
+    "*://*.youtube.com/watch*",
+    "*://youtube.com/watch*",
+    "*://*.youtube.com/shorts/*",
+    "*://youtube.com/shorts/*",
+    "*://youtu.be/*",
+    "*://*.youtube.com/playlist*",
+    "*://youtube.com/playlist*",
+]
+input_actions = []
+native_modules = []
+
+[plugins.manifest.permissions]
+http = [
+    "github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com",
+]
+sources = [
+    "*.googlevideo.com",
+    "*.youtube.com",
+    "youtube.com",
+]
+cookies = [
+    "youtube.com",
+    "*.youtube.com",
+]
+data = true
+native = []
+exec_from_data = true
+
+[[plugins.manifest.permissions.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--no-playlist",
+    "-J",
+    "--skip-download",
+    "--",
+    "*",
+]
+
+[[plugins.manifest.permissions.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--version",
+]
+
+[[plugins.manifest.permissions.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--no-playlist",
+    "-J",
+    "--skip-download",
+    "--cookies",
+    "{cookie_file}",
+    "--",
+    "*",
+]
+
+[[plugins.manifest.permissions.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--no-playlist",
+    "-J",
+    "--skip-download",
+    "--js-runtimes",
+    "*",
+    "--",
+    "*",
+]
+
+[[plugins.manifest.permissions.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--no-playlist",
+    "-J",
+    "--skip-download",
+    "--js-runtimes",
+    "*",
+    "--cookies",
+    "{cookie_file}",
+    "--",
+    "*",
+]
+
+[[plugins.manifest.permissions.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--yes-playlist",
+    "-J",
+    "--skip-download",
+    "--flat-playlist",
+    "--playlist-end",
+    "512",
+    "--",
+    "*",
+]
+
+[[plugins.manifest.permissions.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--yes-playlist",
+    "-J",
+    "--skip-download",
+    "--flat-playlist",
+    "--playlist-end",
+    "512",
+    "--cookies",
+    "{cookie_file}",
+    "--",
+    "*",
+]
+
+[[plugins.manifest.permissions.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--yes-playlist",
+    "-J",
+    "--skip-download",
+    "--flat-playlist",
+    "--playlist-end",
+    "512",
+    "--js-runtimes",
+    "*",
+    "--",
+    "*",
+]
+
+[[plugins.manifest.permissions.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--yes-playlist",
+    "-J",
+    "--skip-download",
+    "--flat-playlist",
+    "--playlist-end",
+    "512",
+    "--js-runtimes",
+    "*",
+    "--cookies",
+    "{cookie_file}",
+    "--",
+    "*",
+]
+
+[[plugins.manifest.settings]]
+key = "use_cookies"
+label = "Use granted browser cookies"
+type = "bool"
+default = false
+options = []
+
+[[plugins.manifest.settings]]
+key = "yt_dlp_path"
+label = "yt-dlp program folder"
+type = "path"
+help = "After changing this folder, grant exec:yt-dlp again to approve and pin the program."
+options = []
+
+[[plugins.manifest.settings]]
+key = "javascript_runtime"
+label = "JavaScript runtime for yt-dlp"
+type = "choice"
+default = "default"
+help = "Choose a runtime installed on your computer. Recent YouTube extractors need one to solve player challenges."
+options = [
+    "default",
+    "node",
+    "deno",
+]
+
+[[plugins.manifest.settings]]
+key = "download_backend"
+label = "Download yt-dlp if it is missing"
+type = "bool"
+default = false
+help = "Fetch the pinned official release for your platform, verify its SHA256, and keep it in this plugin's private folder. Existing approved programs are never replaced automatically."
+options = []
+
+[plugins.signing.Verified]
+fingerprint = "b567c8a9f94ea0a5"
+
+[plugins.grants]
+http = [
+    "github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com",
+]
+sources = [
+    "*.googlevideo.com",
+    "*.youtube.com",
+    "youtube.com",
+]
+cookies = [
+    "youtube.com",
+    "*.youtube.com",
+]
+data = true
+native = []
+exec_from_data = true
+
+[[plugins.grants.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--no-playlist",
+    "-J",
+    "--skip-download",
+    "--",
+    "*",
+]
+
+[[plugins.grants.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--version",
+]
+
+[[plugins.grants.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--no-playlist",
+    "-J",
+    "--skip-download",
+    "--cookies",
+    "{cookie_file}",
+    "--",
+    "*",
+]
+
+[[plugins.grants.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--no-playlist",
+    "-J",
+    "--skip-download",
+    "--js-runtimes",
+    "*",
+    "--",
+    "*",
+]
+
+[[plugins.grants.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--no-playlist",
+    "-J",
+    "--skip-download",
+    "--js-runtimes",
+    "*",
+    "--cookies",
+    "{cookie_file}",
+    "--",
+    "*",
+]
+
+[[plugins.grants.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--yes-playlist",
+    "-J",
+    "--skip-download",
+    "--flat-playlist",
+    "--playlist-end",
+    "512",
+    "--",
+    "*",
+]
+
+[[plugins.grants.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--yes-playlist",
+    "-J",
+    "--skip-download",
+    "--flat-playlist",
+    "--playlist-end",
+    "512",
+    "--cookies",
+    "{cookie_file}",
+    "--",
+    "*",
+]
+
+[[plugins.grants.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--yes-playlist",
+    "-J",
+    "--skip-download",
+    "--flat-playlist",
+    "--playlist-end",
+    "512",
+    "--js-runtimes",
+    "*",
+    "--",
+    "*",
+]
+
+[[plugins.grants.exec]]
+program = "yt-dlp"
+args = [
+    "--ignore-config",
+    "--no-plugin-dirs",
+    "--yes-playlist",
+    "-J",
+    "--skip-download",
+    "--flat-playlist",
+    "--playlist-end",
+    "512",
+    "--js-runtimes",
+    "*",
+    "--cookies",
+    "{cookie_file}",
+    "--",
+    "*",
+]
+
+[plugins.pins.yt-dlp]
+path = "/usr/bin/yt-dlp"
+size = 204
+mtime = 1787213293
+sha256 = "ed88c0fafaad8f242357af30d8f33ac0999a8f0b45c1ad8088080015e65f0061"
+
+[plugins.settings]
+download_backend = false
+javascript_runtime = "default"
+use_cookies = false
+
+[plugins.native_sha256]

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Wine Installer
+MimeType=application/microsoftpatch;
+Exec=env WINEPREFIX="/home/jabir/.wine" /home/ubuntu/buildbot/runners/wine/lutris-4.21-x86_64/bin/wine start /ProgIDOpen Msi.Patch %f
+NoDisplay=true
+StartupNotify=true
+Icon=2402_msiexec.0
+TryExec=/home/ubuntu/buildbot/runners/wine/lutris-4.21-x86_64/bin/wine

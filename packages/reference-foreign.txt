@@ -1,0 +1,20 @@
+# Reference inventory; not installed automatically.
+antigravity-ide
+athas-bin
+bibata-cursor-theme-bin
+cc-switch-bin
+cliamp-bin
+cloudstream-desktop-bin
+craft-launcher-bin
+freebuff-bin
+fresh-editor-bin
+google-chrome
+hydra-download-manager-bin
+libuvc
+misterdownloadmanager-bin
+nbfc-linux
+openidea-bin
+portproton
+t3code-bin
+yay-bin
+yay-bin-debug

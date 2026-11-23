@@ -10,3 +10,4 @@ Terminal=false
 Categories=Utility;
 Keywords=keyboard;sound;click;mechanical;wayclick;
 StartupNotify=false
+TryExec=/home/jabir/.local/bin/wayclick

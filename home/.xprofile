@@ -1,3 +1,8 @@
+# LightDM and startx must see the same user-script PATH.
+if [ -r "$HOME/.profile" ]; then
+    . "$HOME/.profile"
+fi
+
 xset r rate 200 50
 
 # ── Cursor SIZE — the ONE place to change it ────────────────────────────────

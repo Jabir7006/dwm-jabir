@@ -4,6 +4,7 @@
 # এক লাইনে একটা প্যাকেজ। # দিয়ে comment।
 # ─────────────────────────────────────────────────────────────
 7zip
+adwaita-fonts
 alacritty
 alsa-utils
 base-devel
@@ -13,10 +14,12 @@ clipmenu
 curl
 dconf
 dex
+desktop-file-utils
 dunst
 eza
 fastfetch
 feh
+ffmpeg
 file
 fish
 flameshot
@@ -24,6 +27,8 @@ fontconfig
 freetype2
 fzf
 git
+gtk3
+gtk4
 gnome-keyring
 gst-libav
 gst-plugins-bad
@@ -48,6 +53,7 @@ lightdm
 lightdm-slick-greeter
 localsend
 mate-polkit
+mesa
 matugen
 mpv
 nano
@@ -63,11 +69,13 @@ papirus-icon-theme
 pavucontrol
 pciutils
 pipewire
+pipewire-audio
 pipewire-alsa
 pipewire-jack
 pipewire-pulse
 polybar
 python
+python-gobject
 python-psutil
 python-requests
 python-rich
@@ -86,6 +94,7 @@ ttf-meslo-nerd
 tumbler
 unrar
 unzip
+uv
 wget
 wireplumber
 xarchiver
@@ -93,8 +102,10 @@ xcb-util
 xclip
 xdg-desktop-portal-gtk
 xdg-user-dirs
+xdg-utils
 xdotool
 xorg-xinit
+xorg-xinput
 xorg-xprop
 xorg-xrandr
 xorg-xrdb
@@ -102,3 +113,5 @@ xorg-xset
 xorg-xsetroot
 zoxide
 zram-generator
+yad
+yt-dlp

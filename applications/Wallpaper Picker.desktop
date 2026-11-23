@@ -8,3 +8,4 @@ Type=Application
 Icon=preferences-desktop-wallpaper
 Categories=Settings;DesktopSettings;
 StartupNotify=true
+TryExec=/home/jabir/.local/bin/wallpaper-picker.sh

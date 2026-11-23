@@ -1,0 +1,9 @@
+{
+  "record_duration": 5,
+  "timeout": 30,
+  "notifications": true,
+  "auto_copy": false,
+  "default_source": "system",
+  "max_history": 500,
+  "download_covers": true
+}

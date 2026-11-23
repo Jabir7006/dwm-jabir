@@ -25,6 +25,13 @@ MAIN = FULL_MAIN.split("\nprepare_user_paths\n", 1)[0]
 FUNCTIONS = FUNCTIONS.replace("/lib/ld-linux-x86-64.so.2 --help", "mock_loader")
 
 MOCKS = r'''
+mkdir -p "$TEST_ROOT/state" "$TMPDIR"
+export TMPDIR
+for state_name in PACMAN_KIND INSTALLED_X INSTALLED_KERNEL JACK_INSTALLED AUDIO_INSTALLED TRANSIENT_FAILURES; do
+  printf '%s' "${!state_name}" > "$TEST_ROOT/state/$state_name"
+done
+state_get() { cat "$TEST_ROOT/state/$1"; }
+state_set() { printf '%s' "$2" > "$TEST_ROOT/state/$1"; }
 info() { printf 'INFO %s\n' "$*"; }
 ok() { printf 'OK %s\n' "$*"; }
 warn() { printf 'WARN %s\n' "$*"; }
@@ -40,7 +47,12 @@ sudo() {
       [[ "$*" != *--lsign-key* ]] || KEY_READY=1
       ;;
     pacman) pacman "$@" ;;
-    cp|install|tee|chown|chmod|find) command "$cmd" "$@" ;;
+    cp|install|tee|chown|chmod|find)
+      for argument in "$@"; do
+        [[ "$argument" != /* || "$argument" == "$TEST_ROOT/"* ]] || return 1
+      done
+      command "$cmd" "$@"
+      ;;
     *) return 1 ;;
   esac
 }
@@ -52,28 +64,39 @@ pacman() {
     grep -q '^SigLevel = Required DatabaseOptional$' "$2" || return 1
     if [[ "$*" == *cachyos/pacman* ]]; then
       [[ "$PACMAN_BOOTSTRAP_FAIL" == 0 ]] || return 1
-      if [[ "$PACMAN_ARCH_FAIL" == 0 ]]; then PACMAN_KIND=cachyos; fi
+      if [[ "$PACMAN_ARCH_FAIL" == 0 ]]; then state_set PACMAN_KIND cachyos; fi
       log pacman-bootstrap-verified
     else
       [[ "$BOOTSTRAP_FAIL" == 0 ]] || return 1
       log bootstrap-verified
     fi
-  elif [[ "$1" == -Syu ]]; then
+  elif [[ "$1" == -Syu || "$1" == -Syyu ]]; then
+    failures="$(state_get TRANSIENT_FAILURES)"
+    if ((failures > 0)); then
+      state_set TRANSIENT_FAILURES "$((failures - 1))"
+      printf 'error: failed retrieving file: %s\n' "$TRANSIENT_ERROR" >&2
+      return 1
+    fi
     [[ "$UPGRADE_FAIL" == 0 ]] || return 1
     if [[ "$CPU_LEVEL" != generic ]] && grep -qE '^\[cachyos-(v3|v4|znver4)\]' "$PACMAN_CONF"; then
-      [[ "$PACMAN_KIND" == cachyos ]] || { printf 'invalid architecture\n' >&2; return 1; }
+      [[ "$(state_get PACMAN_KIND)" == cachyos ]] || { printf 'invalid architecture\n' >&2; return 1; }
     fi
+    if [[ "$*" == *pipewire-jack* ]]; then state_set AUDIO_INSTALLED 1; state_set JACK_INSTALLED 0; fi
   elif [[ "$1" == -S ]]; then
     if [[ -n "$PACKAGE_FAIL" && "$*" == *"$PACKAGE_FAIL"* ]]; then return 1; fi
     if [[ "$*" == *linux-cachyos* && "$KERNEL_FAIL" == 1 ]]; then return 1; fi
-    if [[ "$*" == *xlibre-xserver* ]]; then INSTALLED_X=xlibre; fi
-    if [[ "$*" == *xorg-server* ]]; then INSTALLED_X=xorg; fi
-    if [[ "$*" == *linux-cachyos* ]]; then INSTALLED_KERNEL=1; fi
+    if [[ "$*" == *xlibre-xserver* ]]; then state_set INSTALLED_X xlibre; fi
+    if [[ "$*" == *xorg-server* ]]; then state_set INSTALLED_X xorg; fi
+    if [[ "$*" == *linux-cachyos* ]]; then state_set INSTALLED_KERNEL 1; fi
+    if [[ "$*" == *pipewire-jack* ]]; then state_set AUDIO_INSTALLED 1; state_set JACK_INSTALLED 0; fi
   elif [[ "$1" == -Qq ]]; then
     case "$2" in
-      xorg-server) [[ "$INSTALLED_X" == xorg ]] ;;
-      xlibre-xserver) [[ "$INSTALLED_X" == xlibre ]] ;;
-      linux-cachyos|linux-cachyos-headers) [[ "$INSTALLED_KERNEL" == 1 ]] ;;
+      xorg-server) [[ "$(state_get INSTALLED_X)" == xorg ]] ;;
+      xlibre-xserver) [[ "$(state_get INSTALLED_X)" == xlibre ]] ;;
+      linux-cachyos|linux-cachyos-headers) [[ "$(state_get INSTALLED_KERNEL)" == 1 ]] ;;
+      jack2) [[ "$(state_get JACK_INSTALLED)" == 1 ]] ;;
+      jack|jack2-dbus|pulseaudio|pulseaudio-alsa|pulseaudio-bluetooth|pipewire-media-session) return 1 ;;
+      pipewire|pipewire-audio|pipewire-alsa|pipewire-jack|pipewire-pulse|wireplumber) [[ "$(state_get AUDIO_INSTALLED)" == 1 ]] ;;
       *) return 0 ;;
     esac
   else
@@ -83,7 +106,7 @@ pacman() {
 pacman-conf() {
   log "pacman-conf $*"
   printf 'x86_64\n'
-  if [[ "$PACMAN_KIND" == cachyos ]]; then
+  if [[ "$(state_get PACMAN_KIND)" == cachyos ]]; then
     printf 'x86_64_v2\n'
     if [[ "$CPU_LEVEL" == v3 || "$CPU_LEVEL" == v4 ]]; then printf 'x86_64_v3\n'; fi
     if [[ "$CPU_LEVEL" == v4 ]]; then printf 'x86_64_v4\n'; fi
@@ -106,6 +129,7 @@ gcc() { printf '  -march=                     %s\n' "$CPU_MARCH"; }
 systemctl() { log "systemctl $*"; }
 mkinitcpio() { :; }
 fc-cache() { :; }
+sleep() { :; }
 '''
 
 
@@ -138,6 +162,9 @@ class InstallerTests(unittest.TestCase):
                       INSTALLED_KERNEL="0",
                       WITH_APPS="0",
                       PACKAGE_FAIL="",
+                      TEST_ROOT=str(self.root), TMPDIR=str(self.root / "tmp"),
+                      JACK_INSTALLED="0", AUDIO_INSTALLED="0", TRANSIENT_FAILURES="0",
+                      TRANSIENT_ERROR="404",
                       USE_CACHYOS="0", XSERVER="xorg", REPOS_CHANGED="0",
                       DEPLOY_ONLY="0", NO_DEPS="0")
         values.update(settings)
@@ -156,6 +183,9 @@ class InstallerTests(unittest.TestCase):
         (self.repo / "home/.profile").write_text("# test profile\n")
         (self.repo / "home/.local/bin/example").write_text("#!/bin/sh\nexit 0\n")
         (self.repo / "applications/example.desktop").write_text("[Desktop Entry]\nName=Example\nExec=/home/jabir/.local/bin/example\n")
+        (self.repo / "scripts").mkdir()
+        (self.repo / "scripts/.xinitrc").write_text("#!/bin/sh\nexec dwm\n")
+        (self.repo / "scripts/theme-apply.sh").write_text("#!/bin/sh\nexit 0\n")
 
     def assert_success(self, result):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -214,6 +244,40 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(events.count("pacman-bootstrap-verified"), 1)
         self.assertEqual(events.count("sudo install -m644"), 1)
         self.assertEqual(len(list(self.root.glob("pacman.conf.dwm-backup-*"))), 1)
+
+    def test_jack2_is_replaced_in_the_first_full_upgrade(self):
+        self.assert_success(self.run_bash(MAIN, JACK_INSTALLED="1"))
+        upgrade = next(line for line in self.events.read_text().splitlines() if line.startswith("sudo pacman -Syu"))
+        self.assertIn("pipewire-jack", upgrade)
+        self.assertNotIn("--noconfirm", upgrade)
+        self.assertEqual((self.root / "state/JACK_INSTALLED").read_text(), "0")
+
+    def test_stale_mirror_download_is_retried_with_database_refresh(self):
+        self.assert_success(self.run_bash("pacman_run -Syu --noconfirm", TRANSIENT_FAILURES="1"))
+        events = self.events.read_text()
+        self.assertIn("sudo pacman -Syu --noconfirm", events)
+        self.assertIn("sudo pacman -Syyu --noconfirm", events)
+
+    def test_download_retries_are_bounded(self):
+        result = self.run_bash("pacman_run -Syu --noconfirm", TRANSIENT_FAILURES="5", TRANSIENT_ERROR="HTTP2 PROTOCOL_ERROR")
+        self.assertNotEqual(result.returncode, 0)
+        calls = [line for line in self.events.read_text().splitlines() if line.startswith("sudo pacman")]
+        self.assertEqual(len(calls), 3)
+
+    def test_audio_stack_has_its_required_runtime_packages(self):
+        self.assert_success(self.run_bash("setup_audio"))
+        events = self.events.read_text()
+        self.assertIn("pipewire-audio", events)
+        self.assertIn("pipewire-jack", events)
+        self.assertIn("wireplumber", events)
+
+    def test_installation_log_is_private_and_retains_errors(self):
+        result = self.run_bash(MAIN, UPGRADE_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        logs = list((self.home / ".local/state/dwm-jabir").glob("install-*.log"))
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0].stat().st_mode & 0o777, 0o600)
+        self.assertIn("System upgrade failed", logs[0].read_text())
 
     def test_previous_cachyos_selection_is_default_on_arch_rerun(self):
         self.conf.write_text(self.conf.read_text() + "[cachyos]\nServer = previous-run\n")
@@ -394,13 +458,12 @@ ensure_helper
 
     def test_repository_helper_is_preferred_when_available(self):
         body = '''
-HELPER_FIXED=0
-paru() { [[ "$HELPER_FIXED" == 1 ]]; }
+paru() { [[ -f "$REPO_DIR/helper-fixed" ]]; }
 yay() { return 1; }
 pacman() {
   log "pacman $*"
   if [[ "$1" == -Si && "$2" == paru ]]; then return 0; fi
-  if [[ "$1" == -S ]]; then HELPER_FIXED=1; return 0; fi
+  if [[ "$1" == -S ]]; then touch "$REPO_DIR/helper-fixed"; return 0; fi
   return 1
 }
 build_aur_pkg() { die "Should use the repository helper"; }
@@ -416,7 +479,7 @@ ensure_helper
         self.seed_deployment()
         (self.repo / "Makefile").write_text((REPO / "Makefile").read_text())
         (self.repo / "config.mk").write_text("PREFIX=/usr/local\nMANPREFIX=/usr/local/share/man\nVERSION=test\nCC=true\n")
-        (self.repo / "scripts").mkdir()
+        (self.repo / "scripts").mkdir(exist_ok=True)
         (self.repo / "scripts/.xinitrc").write_text("exec dwm\n")
         (self.repo / "dwm").write_text("test binary\n")
         (self.repo / "dwm.1").write_text("VERSION\n")

@@ -8,3 +8,4 @@ Type=Application
 Icon=app-launcher
 Categories=System;Utility;
 StartupNotify=true
+TryExec=app-manager

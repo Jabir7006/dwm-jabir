@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=OpenCode
+NoDisplay=true
+Exec=opencode-desktop %U

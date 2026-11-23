@@ -5,3 +5,4 @@ Exec="/usr/bin/cc-switch" %u
 Terminal=false
 MimeType=x-scheme-handler/ccswitch
 NoDisplay=true
+TryExec=/usr/bin/cc-switch

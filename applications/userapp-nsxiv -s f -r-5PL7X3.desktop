@@ -6,3 +6,4 @@ NoDisplay=true
 Exec=nsxiv -s f -r %f
 Name=nsxiv -s f -r
 Comment=Custom definition for nsxiv -s f -r
+TryExec=nsxiv

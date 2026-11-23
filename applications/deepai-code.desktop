@@ -3,6 +3,7 @@ Type=Application
 Name=DeepAI Code
 Exec=/home/jabir/Applications/DeepAI-Code-0.3.43-x86_64.AppImage %U
 Terminal=false
+NoDisplay=true
 Icon=/home/jabir/.local/share/cachyos-pi/appimage-icons/deepai-code.png
 StartupWMClass=deepai-code
 X-AppImage-Version=0.3.43

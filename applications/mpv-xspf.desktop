@@ -6,3 +6,4 @@ Exec=mpv-xspf %f
 Terminal=false
 MimeType=application/xspf+xml;
 NoDisplay=true
+TryExec=mpv-xspf

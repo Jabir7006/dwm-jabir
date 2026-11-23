@@ -4,11 +4,19 @@ test -f "$HOME/.config/dwm-titus/secrets.fish"; and source "$HOME/.config/dwm-ti
 if status is-interactive
     # Replace default fish greeting with fastfetch
     function fish_greeting
-        fastfetch
+        if command -q fastfetch
+            if test -r "$HOME/.config/fastfetch/config.jsonc"
+                fastfetch --config "$HOME/.config/fastfetch/config.jsonc"
+            else
+                fastfetch
+            end
+        end
     end
 
     # Starship custom prompt
-    starship init fish | source
+    if command -q starship
+        starship init fish | source
+    end
 
     # Direnv + Zoxide
     command -v direnv &> /dev/null && direnv hook fish | source
@@ -95,7 +103,7 @@ end
 
     set -gx EDITOR nano
     set -gx VISUAL l3afpad
-    command -v fnm &> /dev/null && fnm env --use-on-cd | source
+    # fnm is initialized once by conf.d/fnm.fish, when it is installed.
     command -v thefuck &> /dev/null && thefuck --alias | source
 end
 # pnpm

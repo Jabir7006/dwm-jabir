@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=winebrowser
+MimeType=application/pdf;
+Exec=env WINEPREFIX="/home/jabir/.wine" /home/ubuntu/buildbot/runners/wine/lutris-4.21-x86_64/bin/wine start /ProgIDOpen pdffile %f
+NoDisplay=true
+StartupNotify=true
+Icon=7765_winebrowser.0
+TryExec=/home/ubuntu/buildbot/runners/wine/lutris-4.21-x86_64/bin/wine

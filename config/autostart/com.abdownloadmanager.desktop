@@ -5,3 +5,4 @@ Exec="/opt/abdownloadmanager/bin/ABDownloadManager" --background
 Icon=/opt/abdownloadmanager/lib/ABDownloadManager.png
 Terminal=false
 NoDisplay=true
+TryExec=/opt/abdownloadmanager/bin/ABDownloadManager

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=winhlp32
+MimeType=application/winhlp;
+Exec=env WINEPREFIX="/home/jabir/.wine" /home/ubuntu/buildbot/runners/wine/lutris-4.21-x86_64/bin/wine start /ProgIDOpen hlpfile %f
+NoDisplay=true
+StartupNotify=true
+Icon=4137_winhlp32.0
+TryExec=/home/ubuntu/buildbot/runners/wine/lutris-4.21-x86_64/bin/wine

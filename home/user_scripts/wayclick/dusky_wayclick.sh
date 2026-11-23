@@ -191,6 +191,8 @@ fi
 
 # --- 3. INTERACTIVE DETECTION ---
 [[ -t 0 ]] && INTERACTIVE=true || INTERACTIVE=false
+# Explicit setup is safe without a terminal; normal launches never build silently.
+[[ "$RUN_MODE" != setup ]] || INTERACTIVE=true
 
 # --- 4. DEPENDENCY CHECK ---
 declare -a NEEDED_DEPS=()
@@ -276,7 +278,10 @@ if [[ ! -d "$VENV_DIR" ]]; then
     printf "%b[BUILD]%b Initializing UV environment...\n" "${C_BLUE}" "${C_RESET}"
     # Explicitly asking for >=3.14 ensures uv seeks the absolute cutting edge 
     # rolling release present on your system while never falling back to older versions.
-    uv venv "$VENV_DIR" --python ">=3.14" --quiet
+    uv venv "$VENV_DIR" --python ">=3.14" --quiet || {
+        printf '%s\n' 'WayClick environment creation failed.' >&2
+        exit 1
+    }
 fi
 
 MARKER_FILE="$BASE_DIR/.build_marker_v10"
@@ -297,7 +302,10 @@ if [[ ! -f "$MARKER_FILE" ]]; then
     uv pip install --python "$PYTHON_BIN" \
         --no-binary evdev \
         --compile-bytecode \
-        evdev pygame-ce
+        evdev pygame-ce || {
+            printf '%s\n' 'WayClick dependency installation failed; setup can be retried.' >&2
+            exit 1
+        }
 
     printf "%b[BUILD]%b Attempting uvloop (optional, faster event loop)...\n" "${C_BLUE}" "${C_RESET}"
     uv pip install --python "$PYTHON_BIN" \

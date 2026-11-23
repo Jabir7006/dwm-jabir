@@ -1,0 +1,11 @@
+[Unit]
+Description=Rarely re-apply the PortProton patch kit (event driven otherwise)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+RandomizedDelaySec=45min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

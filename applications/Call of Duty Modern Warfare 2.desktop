@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Call of Duty Modern Warfare 2
+Exec=env "/home/jabir/PortProton/data/scripts/start.sh" "/run/media/jabir/Local Disk 2/Games/Call of Duty - Modern Warfare 2/iw4sp.exe"
+Type=Application
+Categories=Game
+StartupNotify=true
+Path=/home/jabir/PortProton/data/scripts/
+Icon=/home/jabir/PortProton/data/img/iw4sp.png
+TryExec=/home/jabir/PortProton/data/scripts/start.sh

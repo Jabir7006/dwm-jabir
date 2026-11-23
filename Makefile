@@ -56,7 +56,7 @@ install: all
 	@echo "==> Installing scripts to PATH..."
 	for f in scripts/*; do \
 		[ -f "$$f" ] || continue; \
-		case "$$(basename $$f)" in autostart*) continue;; esac; \
+		case "$$(basename $$f)" in autostart*|snapshot-desktop.py) continue;; esac; \
 		install -Dm755 "$$f" "${DESTDIR}${PREFIX}/bin/$$(basename $$f)"; \
 	done
 	@echo "==> Seeding user config (skipping existing files)..."

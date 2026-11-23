@@ -1,0 +1,9 @@
+[Unit]
+Description=Re-apply the PortProton patch kit
+
+[Service]
+Type=oneshot
+Nice=19
+CPUScheduling=idle
+IOSchedulingClass=idle
+ExecStart=/home/jabir/.local/share/portproton-patch/install.sh

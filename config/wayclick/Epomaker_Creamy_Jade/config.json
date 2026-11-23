@@ -1,0 +1,657 @@
+{
+  "config_version": "2",
+  "name": "Epomaker Creamy Jade",
+  "author": "cpso",
+  "description": "Name: Saint!\nCreamy/Clacky\nDescription: Based on a keyboard i seen in request i couldnt really find without music so i just did the switches it had to the best of my ability\nSource: https://www.youtube.com/watch?v=AM2hiCV7UYM",
+  "definition_method": "single",
+  "audio_file": "audio.mp3",
+  "soundpack_type": "Keyboard",
+  "options": {
+    "recommended_volume": 1,
+    "random_pitch": false
+  },
+  "definitions": {
+    "Escape": {
+      "timing": [
+        [
+          699.9477914663483,
+          793.2741636618566
+        ]
+      ]
+    },
+    "KeyW": {
+      "timing": [
+        [
+          2563.1421506553365,
+          2699.798624227333
+        ]
+      ]
+    },
+    "key": {
+      "timing": [
+        [
+          21534.727157016598,
+          21671.716857686584
+        ]
+      ]
+    },
+    "KeyF": {
+      "timing": [
+        [
+          2563.1421506553365,
+          2699.798624227333
+        ]
+      ]
+    },
+    "KeyU": {
+      "timing": [
+        [
+          2563.1421506553365,
+          2699.798624227333
+        ]
+      ]
+    },
+    "KeyE": {
+      "timing": [
+        [
+          2719.7971325549447,
+          2866.452860290746
+        ]
+      ]
+    },
+    "KeyG": {
+      "timing": [
+        [
+          2719.7971325549447,
+          2866.452860290746
+        ]
+      ]
+    },
+    "KeyP": {
+      "timing": [
+        [
+          2719.7971325549447,
+          2866.452860290746
+        ]
+      ]
+    },
+    "KeyD": {
+      "timing": [
+        [
+          2986.443910256405,
+          3099.7687907795244
+        ]
+      ]
+    },
+    "Digit6": {
+      "timing": [
+        [
+          2986.443910256405,
+          3099.7687907795244
+        ]
+      ]
+    },
+    "KeyN": {
+      "timing": [
+        [
+          2986.443910256405,
+          3099.7687907795244
+        ]
+      ]
+    },
+    "KeyS": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "Digit5": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "KeyV": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "KeyI": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "Digit9": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "KeyY": {
+      "timing": [
+        [
+          2563.1421506553365,
+          2699.798624227333
+        ]
+      ]
+    },
+    "KeyM": {
+      "timing": [
+        [
+          2563.1421506553365,
+          2699.798624227333
+        ]
+      ]
+    },
+    "KeyA": {
+      "timing": [
+        [
+          3589.7322448059604,
+          3719.7225489354205
+        ]
+      ]
+    },
+    "KeyB": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "Digit7": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "F6": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "F2": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "Digit2": {
+      "timing": [
+        [
+          3139.7658074347455,
+          3289.754619891815
+        ]
+      ]
+    },
+    "KeyQ": {
+      "timing": [
+        [
+          3859.712107228692,
+          3989.7024113581524
+        ]
+      ]
+    },
+    "Digit4": {
+      "timing": [
+        [
+          3859.712107228692,
+          3989.7024113581524
+        ]
+      ]
+    },
+    "KeyJ": {
+      "timing": [
+        [
+          3859.712107228692,
+          3989.7024113581524
+        ]
+      ]
+    },
+    "KeyO": {
+      "timing": [
+        [
+          4019.5890981502416,
+          4149.5794022797145
+        ]
+      ]
+    },
+    "Equal": {
+      "timing": [
+        [
+          4019.5890981502416,
+          4149.5794022797145
+        ]
+      ]
+    },
+    "KeyT": {
+      "timing": [
+        [
+          4019.5890981502416,
+          4149.5794022797145
+        ]
+      ]
+    },
+    "KeyR": {
+      "timing": [
+        [
+          4316.122562643797,
+          4446.11286677327
+        ]
+      ]
+    },
+    "Digit3": {
+      "timing": [
+        [
+          4316.122562643797,
+          4446.11286677327
+        ]
+      ]
+    },
+    "F1": {
+      "timing": [
+        [
+          4316.122562643797,
+          4446.11286677327
+        ]
+      ]
+    },
+    "F9": {
+      "timing": [
+        [
+          4316.122562643797,
+          4446.11286677327
+        ]
+      ]
+    },
+    "KeyX": {
+      "timing": [
+        [
+          4469.444459822147,
+          4599.43476395162
+        ]
+      ]
+    },
+    "Digit1": {
+      "timing": [
+        [
+          4469.444459822147,
+          4599.43476395162
+        ]
+      ]
+    },
+    "KeyH": {
+      "timing": [
+        [
+          4469.444459822147,
+          4599.43476395162
+        ]
+      ]
+    },
+    "KeyL": {
+      "timing": [
+        [
+          5275.485818702624,
+          5398.48554234776
+        ]
+      ]
+    },
+    "KeyK": {
+      "timing": [
+        [
+          5272.9400290464755,
+          5406.263417897217
+        ]
+      ]
+    },
+    "KeyC": {
+      "timing": [
+        [
+          5422.595207534864,
+          5555.918596385605
+        ]
+      ]
+    },
+    "KeyZ": {
+      "timing": [
+        [
+          5422.595207534864,
+          5555.918596385605
+        ]
+      ]
+    },
+    "Digit8": {
+      "timing": [
+        [
+          5422.595207534864,
+          5555.918596385605
+        ]
+      ]
+    },
+    "F3": {
+      "timing": [
+        [
+          5422.595207534864,
+          5555.918596385605
+        ]
+      ]
+    },
+    "F5": {
+      "timing": [
+        [
+          5422.595207534864,
+          5555.918596385605
+        ]
+      ]
+    },
+    "Period": {
+      "timing": [
+        [
+          4819.3068729852985,
+          4952.63026183604
+        ]
+      ]
+    },
+    "Quote": {
+      "timing": [
+        [
+          4819.3068729852985,
+          4952.63026183604
+        ]
+      ]
+    },
+    "BracketLeft": {
+      "timing": [
+        [
+          4309.344910631244,
+          4442.668299481985
+        ]
+      ]
+    },
+    "Semicolon": {
+      "timing": [
+        [
+          4309.344910631244,
+          4442.668299481985
+        ]
+      ]
+    },
+    "BracketRight": {
+      "timing": [
+        [
+          5006.68181285731,
+          5140.005201708052
+        ]
+      ]
+    },
+    "Comma": {
+      "timing": [
+        [
+          5006.68181285731,
+          5140.005201708052
+        ]
+      ]
+    },
+    "Digit0": {
+      "timing": [
+        [
+          5006.68181285731,
+          5140.005201708052
+        ]
+      ]
+    },
+    "Slash": {
+      "timing": [
+        [
+          5006.68181285731,
+          5140.005201708052
+        ]
+      ]
+    },
+    "F4": {
+      "timing": [
+        [
+          5006.68181285731,
+          5140.005201708052
+        ]
+      ]
+    },
+    "F7": {
+      "timing": [
+        [
+          5006.68181285731,
+          5140.005201708052
+        ]
+      ]
+    },
+    "Backspace": {
+      "timing": [
+        [
+          21534.727157016598,
+          21671.716857686584
+        ]
+      ]
+    },
+    "Enter": {
+      "timing": [
+        [
+          22331.33440539979,
+          22468.324106069776
+        ]
+      ]
+    },
+    "Backslash": {
+      "timing": [
+        [
+          22331.33440539979,
+          22468.324106069776
+        ]
+      ]
+    },
+    "ShiftLeft": {
+      "timing": [
+        [
+          23261.265042633608,
+          23398.254743303594
+        ]
+      ]
+    },
+    "Space": {
+      "timing": [
+        [
+          21534.727157016598,
+          21671.716857686584
+        ]
+      ]
+    },
+    "CapsLock": {
+      "timing": [
+        [
+          22331.33440539979,
+          22468.324106069776
+        ]
+      ]
+    },
+    "Tab": {
+      "timing": [
+        [
+          22331.33440539979,
+          22468.324106069776
+        ]
+      ]
+    },
+    "F8": {
+      "timing": [
+        [
+          5006.68181285731,
+          5140.005201708052
+        ]
+      ]
+    },
+    "ControlLeft": {
+      "timing": [
+        [
+          2563.1421506553315,
+          2696.4655395060645
+        ]
+      ]
+    },
+    "MetaLeft": {
+      "timing": [
+        [
+          2973.111571371329,
+          3106.434960222062
+        ]
+      ]
+    },
+    "AltLeft": {
+      "timing": [
+        [
+          3416.411839300013,
+          3549.7352281507465
+        ]
+      ]
+    },
+    "F10": {
+      "timing": [
+        [
+          3599.7314989697675,
+          3733.054887820501
+        ]
+      ]
+    },
+    "F11": {
+      "timing": [
+        [
+          7359.4510645604405,
+          7486.108283968644
+        ]
+      ]
+    },
+    "F12": {
+      "timing": [
+        [
+          7359.4510645604405,
+          7486.108283968644
+        ]
+      ]
+    },
+    "Backquote": {
+      "timing": [
+        [
+          4019.5890981502416,
+          4149.5794022797145
+        ]
+      ]
+    }
+  },
+  "id": "mv-be2dca8115454c0e96edbfbe5d8e33fb",
+  "version": "2",
+  "tags": [],
+  "mappings": {
+    "1": "wayclick_slices/audio__699p948_793p274__151bca55.wav",
+    "17": "wayclick_slices/audio__2563p14_2699p8__7a3301a9.wav",
+    "33": "wayclick_slices/audio__2563p14_2699p8__7a3301a9.wav",
+    "22": "wayclick_slices/audio__2563p14_2699p8__7a3301a9.wav",
+    "18": "wayclick_slices/audio__2719p8_2866p45__eba3ee3b.wav",
+    "34": "wayclick_slices/audio__2719p8_2866p45__eba3ee3b.wav",
+    "25": "wayclick_slices/audio__2719p8_2866p45__eba3ee3b.wav",
+    "32": "wayclick_slices/audio__2986p44_3099p77__857a58bd.wav",
+    "7": "wayclick_slices/audio__2986p44_3099p77__857a58bd.wav",
+    "49": "wayclick_slices/audio__2986p44_3099p77__857a58bd.wav",
+    "31": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "6": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "47": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "23": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "10": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "21": "wayclick_slices/audio__2563p14_2699p8__7a3301a9.wav",
+    "50": "wayclick_slices/audio__2563p14_2699p8__7a3301a9.wav",
+    "30": "wayclick_slices/audio__3589p73_3719p72__54e34377.wav",
+    "48": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "8": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "64": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "60": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "3": "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "16": "wayclick_slices/audio__3859p71_3989p7__8d771ddf.wav",
+    "5": "wayclick_slices/audio__3859p71_3989p7__8d771ddf.wav",
+    "36": "wayclick_slices/audio__3859p71_3989p7__8d771ddf.wav",
+    "24": "wayclick_slices/audio__4019p59_4149p58__5dd204ca.wav",
+    "13": "wayclick_slices/audio__4019p59_4149p58__5dd204ca.wav",
+    "20": "wayclick_slices/audio__4019p59_4149p58__5dd204ca.wav",
+    "19": "wayclick_slices/audio__4316p12_4446p11__59fe6c72.wav",
+    "4": "wayclick_slices/audio__4316p12_4446p11__59fe6c72.wav",
+    "59": "wayclick_slices/audio__4316p12_4446p11__59fe6c72.wav",
+    "67": "wayclick_slices/audio__4316p12_4446p11__59fe6c72.wav",
+    "45": "wayclick_slices/audio__4469p44_4599p43__c6e50c43.wav",
+    "2": "wayclick_slices/audio__4469p44_4599p43__c6e50c43.wav",
+    "35": "wayclick_slices/audio__4469p44_4599p43__c6e50c43.wav",
+    "38": "wayclick_slices/audio__5275p49_5398p49__075b4f9b.wav",
+    "37": "wayclick_slices/audio__5272p94_5406p26__cbe5827d.wav",
+    "46": "wayclick_slices/audio__5422p6_5555p92__81dc40c4.wav",
+    "44": "wayclick_slices/audio__5422p6_5555p92__81dc40c4.wav",
+    "9": "wayclick_slices/audio__5422p6_5555p92__81dc40c4.wav",
+    "61": "wayclick_slices/audio__5422p6_5555p92__81dc40c4.wav",
+    "63": "wayclick_slices/audio__5422p6_5555p92__81dc40c4.wav",
+    "52": "wayclick_slices/audio__4819p31_4952p63__756de930.wav",
+    "40": "wayclick_slices/audio__4819p31_4952p63__756de930.wav",
+    "26": "wayclick_slices/audio__4309p34_4442p67__114b4526.wav",
+    "39": "wayclick_slices/audio__4309p34_4442p67__114b4526.wav",
+    "27": "wayclick_slices/audio__5006p68_5140p01__4a51dde2.wav",
+    "51": "wayclick_slices/audio__5006p68_5140p01__4a51dde2.wav",
+    "11": "wayclick_slices/audio__5006p68_5140p01__4a51dde2.wav",
+    "53": "wayclick_slices/audio__5006p68_5140p01__4a51dde2.wav",
+    "62": "wayclick_slices/audio__5006p68_5140p01__4a51dde2.wav",
+    "65": "wayclick_slices/audio__5006p68_5140p01__4a51dde2.wav",
+    "14": "wayclick_slices/audio__21534p7_21671p7__13118fee.wav",
+    "28": "wayclick_slices/audio__22331p3_22468p3__4a784db2.wav",
+    "43": "wayclick_slices/audio__22331p3_22468p3__4a784db2.wav",
+    "42": "wayclick_slices/audio__23261p3_23398p3__66acbb8c.wav",
+    "57": "wayclick_slices/audio__21534p7_21671p7__13118fee.wav",
+    "58": "wayclick_slices/audio__22331p3_22468p3__4a784db2.wav",
+    "15": "wayclick_slices/audio__22331p3_22468p3__4a784db2.wav",
+    "66": "wayclick_slices/audio__5006p68_5140p01__4a51dde2.wav",
+    "29": "wayclick_slices/audio__2563p14_2696p47__9a531e90.wav",
+    "125": "wayclick_slices/audio__2973p11_3106p43__80a28fbe.wav",
+    "56": "wayclick_slices/audio__3416p41_3549p74__08a093df.wav",
+    "68": "wayclick_slices/audio__3599p73_3733p05__a0696d5a.wav",
+    "87": "wayclick_slices/audio__7359p45_7486p11__ab48581e.wav",
+    "88": "wayclick_slices/audio__7359p45_7486p11__ab48581e.wav",
+    "41": "wayclick_slices/audio__4019p59_4149p58__5dd204ca.wav",
+    "272": "mouse/wayclick_slices/audio__0_249p979__5b0f0cc7.wav",
+    "273": "mouse/wayclick_slices/audio__249p979_489p958__7718d256.wav",
+    "275": "mouse/wayclick_slices/audio__489p958_619p938__79f9a6a8.wav",
+    "276": "mouse/wayclick_slices/audio__489p958_619p938__79f9a6a8.wav",
+    "277": "mouse/wayclick_slices/audio__489p958_619p938__79f9a6a8.wav",
+    "278": "mouse/wayclick_slices/audio__489p958_619p938__79f9a6a8.wav",
+    "279": "mouse/wayclick_slices/audio__489p958_619p938__79f9a6a8.wav"
+  },
+  "defaults": [
+    "wayclick_slices/audio__4469p44_4599p43__c6e50c43.wav",
+    "wayclick_slices/audio__3139p77_3289p75__6c05f7ad.wav",
+    "wayclick_slices/audio__4316p12_4446p11__59fe6c72.wav",
+    "wayclick_slices/audio__3859p71_3989p7__8d771ddf.wav",
+    "wayclick_slices/audio__2986p44_3099p77__857a58bd.wav",
+    "wayclick_slices/audio__5422p6_5555p92__81dc40c4.wav",
+    "wayclick_slices/audio__5006p68_5140p01__4a51dde2.wav",
+    "wayclick_slices/audio__4019p59_4149p58__5dd204ca.wav"
+  ]
+}

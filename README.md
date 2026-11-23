@@ -12,7 +12,7 @@ This is a **heavily modified** version of dwm based on the original [suckless.or
 
 > **This fork (`dwm-jabir`) ships a full preconfigured desktop.**
 > Fresh Arch/CachyOS install → `./install.sh` → your whole DWM setup back.
-> See **[INSTALL.md](INSTALL.md)**.
+> See **[INSTALL.md](INSTALL.md)** and **[the saved desktop snapshot](SNAPSHOT.md)**.
 
 ### Patches & Features
 
@@ -35,15 +35,17 @@ This is a **heavily modified** version of dwm based on the original [suckless.or
 
 ### Quick Install (Recommended)
 
-Use [Linutil](https://christitus.com/linux) for automated setup:
+Restore this repository's saved desktop:
 
 ```bash
-curl -fsSL https://christitus.com/linux | sh
+git clone https://github.com/Jabir7006/dwm-jabir.git ~/dwm-jabir
+cd ~/dwm-jabir
+./install.sh
 ```
 
-<img width="1839" height="1000" alt="image" src="https://github.com/user-attachments/assets/314f9a40-4ccb-4c34-b3d2-dcfee63c278b" />
-
-Select `dwm`, `rofi`, `bash prompt`, and `ghostty` using the `v` key, then press `Enter`.
+Use `./install.sh --with-apps` for optional applications. The installer selects
+the kernel/repositories first and includes the saved appearance, launchers,
+scripts, assets, and dependencies described in [INSTALL.md](INSTALL.md).
 
 ### Manual Install
 
@@ -78,8 +80,8 @@ sudo pacman -S polybar
 #### 2. Clone and Build
 
 ```bash
-git clone https://github.com/ChrisTitusTech/dwm-titus.git
-cd dwm-titus
+git clone https://github.com/Jabir7006/dwm-jabir.git
+cd dwm-jabir
 cp config.def.h config.h    # Create your personal config
 make
 sudo make install

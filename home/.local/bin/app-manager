@@ -50,13 +50,22 @@ launch_webapp() {
   profile_dir="$HOME/.local/share/webapps/$class"
   mkdir -p "$profile_dir"
 
-  browser=$(xdg-settings get default-web-browser 2>/dev/null)
+  browser=$(xdg-settings get default-web-browser 2>/dev/null || true)
   case $browser in
     google-chrome* | brave* | microsoft-edge* | opera* | vivaldi* | chromium*) ;;
     *) browser="chromium.desktop" ;;
   esac
   exec_cmd=$(sed -n 's/^Exec=\([^ ]*\).*/\1/p' {~/.local,/usr}/share/applications/"$browser" 2>/dev/null | head -1)
-  [[ -z $exec_cmd ]] && exec_cmd="chromium"
+  if [[ -z $exec_cmd ]] || ! command -v "$exec_cmd" >/dev/null 2>&1; then
+    exec_cmd=""
+    for candidate in google-chrome-stable google-chrome brave-origin brave-browser chromium helium-browser; do
+      if command -v "$candidate" >/dev/null 2>&1; then exec_cmd="$candidate"; break; fi
+    done
+  fi
+  if [[ -z $exec_cmd ]]; then
+    notify "Web App" "Install a Chromium-based browser before opening this web app."
+    return 1
+  fi
   exec "$exec_cmd" --app="$url" --class="$class" --user-data-dir="$profile_dir"
 }
 

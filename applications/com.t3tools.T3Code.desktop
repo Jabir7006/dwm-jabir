@@ -7,3 +7,4 @@ Terminal=false
 NoDisplay=true
 StartupNotify=false
 MimeType=x-scheme-handler/t3code;
+TryExec=/opt/t3code-bin/t3code

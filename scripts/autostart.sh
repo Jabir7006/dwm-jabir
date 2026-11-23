@@ -4,6 +4,13 @@
 # Phase 2: Background services (compositor, notifications, polybar, tray apps)
 
 # ── Phase 1: Blocking ──────────────────────────────────────────────────────────
+if [ -r "$HOME/.profile" ]; then
+    . "$HOME/.profile"
+fi
+SESSION_SCRIPTS="$HOME/.local/share/dwm-titus/scripts"
+[ ! -x "$SESSION_SCRIPTS/session-setup.sh" ] || "$SESSION_SCRIPTS/session-setup.sh"
+[ ! -x "$SESSION_SCRIPTS/input-setup.sh" ] || "$SESSION_SCRIPTS/input-setup.sh"
+
 # Disable DPMS and screen blanking (prevents GPU/display wake issues)
 xset s off
 xset s noblank
@@ -12,9 +19,9 @@ xset r rate 200 50
 
 # Export display env to systemd/dbus in parallel (both are IPC round-trips)
 if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user import-environment DISPLAY XAUTHORITY &
+    systemctl --user import-environment PATH DISPLAY XAUTHORITY &
 fi
-dbus-update-activation-environment --systemd DISPLAY XAUTHORITY 2>/dev/null &
+dbus-update-activation-environment --systemd PATH DISPLAY XAUTHORITY 2>/dev/null &
 wait
 
 # ── Phase 2: Background services ───────────────────────────────────────────────

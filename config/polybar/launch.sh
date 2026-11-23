@@ -1,84 +1,103 @@
 #!/usr/bin/env bash
-
-THEME="minimal"
-
-# Kill existing polybar instances only if running
-if pgrep -u $UID -x polybar >/dev/null 2>&1; then
-    killall polybar
-    while pgrep -u $UID -x polybar >/dev/null; do sleep 0.2; done
-fi
-
-# Determine config path: prefer ~/.config/polybar (installed), fallback to repo location
+# Preserve the saved layout across hardware changes and virtual machines.
+set -u
+THEME=minimal
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "$HOME/.config/polybar/themes/$THEME/config.ini" ]; then
-    CONFIG_DIR="$HOME/.config/polybar"
-elif [ -f "$SCRIPT_DIR/themes/$THEME/config.ini" ]; then
-    CONFIG_DIR="$SCRIPT_DIR"
-else
-    CONFIG_DIR="$HOME/.config/polybar"
-fi
+CONFIG_DIR="$HOME/.config/polybar"
+[[ -f "$CONFIG_DIR/themes/$THEME/config.ini" ]] || CONFIG_DIR="$SCRIPT_DIR"
 
-CONFIG_FILE="$CONFIG_DIR/themes/$THEME/config.ini"
-LAPTOP_CONFIG_FILE="$CONFIG_DIR/themes/$THEME/laptop-config.ini"
+runtime_dir="${XDG_CACHE_HOME:-$HOME/.cache}/dwm-jabir/polybar"
+mkdir -p "$runtime_dir"
+display_key="${DISPLAY:-default}"
+display_key="${display_key//[^a-zA-Z0-9]/_}"
+exec 9>"$runtime_dir/launch-$display_key.lock"
+flock -n 9 || exit 0
 
-if command ls /sys/class/power_supply/ 2>/dev/null | command grep -q '^BAT'; then
-	CONFIG_FILE=$LAPTOP_CONFIG_FILE
-	# Detect battery and adapter names for polybar battery module
-	export DWM_BATTERY=$(command ls /sys/class/power_supply/ 2>/dev/null | command grep -E '^BAT[0-9]' | head -1)
-	export DWM_ADAPTER=$(command ls /sys/class/power_supply/ 2>/dev/null | command grep -Ev '^BAT' | head -1)
-fi
-
-# Check if xrandr is available and get monitor list
-if command -v xrandr > /dev/null 2>&1; then
-    # Get list of connected monitors
-    mapfile -t MONITORS < <(xrandr --query | command grep " connected" | cut -d" " -f1)
-    MONITOR_COUNT=${#MONITORS[@]}
-    
-    # Detect primary monitor
-    PRIMARY_MONITOR=$(xrandr --query | command grep " connected primary" | cut -d" " -f1)
-    
-    # If no primary monitor is explicitly set, use the first one
-    if [ -z "$PRIMARY_MONITOR" ]; then
-        PRIMARY_MONITOR=${MONITORS[0]}
-        echo "No primary monitor detected, using first monitor: $PRIMARY_MONITOR"
-    else
-        echo "Primary monitor detected: $PRIMARY_MONITOR"
+# A theme refresh must not stop bars belonging to another X session.
+bar_pids=()
+while IFS= read -r pid; do
+    if tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -Fx "DISPLAY=${DISPLAY:-}" >/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        bar_pids+=("$pid")
     fi
-    
-    echo "Detected $MONITOR_COUNT monitors: ${MONITORS[*]}"
-    
-    if [ $MONITOR_COUNT -eq 1 ]; then
-        # Single monitor setup - launch main bar with tray and EWMH
-        echo "Single monitor setup - launching main polybar with tray and EWMH on ${MONITORS[0]}"
-        MONITOR=${MONITORS[0]} polybar main -c "$CONFIG_FILE" &
-    else
-        # Multi-monitor setup
-        echo "Multi-monitor setup - EWMH and systray only on primary monitor"
-        
-        # Launch polybar on all connected monitors
-        for monitor in "${MONITORS[@]}"; do
-            if [ "$monitor" = "$PRIMARY_MONITOR" ]; then
-                # Primary monitor gets the tray and EWMH
-                MONITOR=$monitor polybar main -c "$CONFIG_FILE" &
-                echo "Launched primary polybar with tray and EWMH on $monitor"
-            else
-                # Secondary monitors don't get the tray or EWMH
-                MONITOR=$monitor polybar secondary -c "$CONFIG_FILE" &
-                echo "Launched secondary polybar without tray on $monitor"
-            fi
-        done
-    fi
-else
-    # Fallback: launch main bar if xrandr is not available
-    echo "xrandr not available - launching fallback main polybar with tray"
-    polybar main -c "$CONFIG_FILE" &
-fi
-
-# Wait for Polybar to be ready before returning.
-# This ensures tray apps started after this script can find the tray owner.
-for i in $(seq 1 30); do
-    if xdotool search --class Polybar >/dev/null 2>&1; then
-        break
-    fi
+done < <(pgrep -u "$UID" -x polybar || true)
+for ((attempt=0; attempt<50; attempt++)); do
+    running=0
+    for pid in "${bar_pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then running=1; break; fi
+    done
+    ((running != 0)) || break
     sleep 0.1
 done
+if ((running != 0)); then
+    printf '%s\n' 'Previous Polybar did not stop within five seconds; leaving it running.' >&2
+    exit 1
+fi
+
+DWM_BATTERY=""; DWM_ADAPTER=""; DWM_BACKLIGHT=""
+for device in /sys/class/power_supply/*; do
+    [[ -r "$device/type" ]] || continue
+    case "$(cat "$device/type")" in
+        Battery) [[ -n "$DWM_BATTERY" ]] || DWM_BATTERY="${device##*/}" ;;
+        Mains|USB|USB_C) [[ -n "$DWM_ADAPTER" ]] || DWM_ADAPTER="${device##*/}" ;;
+    esac
+done
+for device in /sys/class/backlight/*; do
+    [[ -d "$device" ]] || continue
+    DWM_BACKLIGHT="${device##*/}"
+    [[ "$DWM_BACKLIGHT" != intel_backlight ]] || break
+done
+export DWM_BATTERY DWM_ADAPTER DWM_BACKLIGHT
+
+profile="${DWM_POLYBAR_PROFILE:-}"
+if [[ -z "$profile" && -r "$CONFIG_DIR/profile" ]]; then
+    read -r profile < "$CONFIG_DIR/profile" || true
+fi
+profile="${profile:-auto}"
+CONFIG_FILE="$CONFIG_DIR/themes/$THEME/config.ini"
+if [[ "$profile" == laptop || ( "$profile" == auto && -n "$DWM_BATTERY" ) ]]; then
+    CONFIG_FILE="$CONFIG_DIR/themes/$THEME/laptop-config.ini"
+fi
+
+# Omit unavailable hardware modules without rearranging the remaining modules
+# or replacing the saved date/title alignment, colours, dimensions, and fonts.
+RUNTIME_CONFIG="$runtime_dir/config-$display_key.ini"
+awk -v battery="$DWM_BATTERY" -v backlight="$DWM_BACKLIGHT" '
+    /^[[:space:]]*modules-(left|center|right)[[:space:]]*=/ {
+        split($0, parts, "=")
+        count = split(parts[2], modules, /[[:space:]]+/)
+        printf "%s=", parts[1]
+        for (i = 1; i <= count; i++) {
+            if (modules[i] == "" || (modules[i] == "battery" && battery == "") ||
+                (modules[i] == "brightnessctl" && backlight == "")) continue
+            printf " %s", modules[i]
+        }
+        printf "\n"; next
+    }
+    { print }
+' "$CONFIG_FILE" > "$RUNTIME_CONFIG"
+
+MONITORS=()
+PRIMARY_MONITOR=""
+if command -v xrandr >/dev/null 2>&1; then
+    monitor_info="$(xrandr --query 2>/dev/null)" || monitor_info=""
+    mapfile -t MONITORS < <(awk '/ connected/ { print $1 }' <<< "$monitor_info")
+    PRIMARY_MONITOR="$(awk '/ connected primary/ { print $1; exit }' <<< "$monitor_info")"
+fi
+if ((${#MONITORS[@]} == 0)); then
+    polybar main -c "$RUNTIME_CONFIG" 9>&- &
+else
+    PRIMARY_MONITOR="${PRIMARY_MONITOR:-${MONITORS[0]}}"
+    for monitor in "${MONITORS[@]}"; do
+        bar=secondary
+        [[ "$monitor" != "$PRIMARY_MONITOR" ]] || bar=main
+        MONITOR="$monitor" polybar "$bar" -c "$RUNTIME_CONFIG" 9>&- &
+    done
+fi
+
+if command -v xdotool >/dev/null 2>&1; then
+    for ((attempt=0; attempt<30; attempt++)); do
+        xdotool search --class Polybar >/dev/null 2>&1 && break
+        sleep 0.1
+    done
+fi

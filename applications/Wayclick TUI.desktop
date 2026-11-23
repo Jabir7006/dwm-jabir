@@ -7,3 +7,4 @@ Terminal=false
 Type=Application
 Icon=input-keyboard
 StartupNotify=true
+TryExec=app-manager

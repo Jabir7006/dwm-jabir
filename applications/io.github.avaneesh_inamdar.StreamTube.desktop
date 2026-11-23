@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Stream Tube
+GenericName=YouTube client
+Comment=Watch YouTube without ads, sponsor reads or a browser
+Exec=/home/jabir/Applications/StreamTube-0.6.0-alpha-x86_64-2.AppImage %u
+Icon=/home/jabir/.local/share/cachyos-pi/appimage-icons/io.github.avaneesh_inamdar.StreamTube.svg
+Terminal=false
+Categories=AudioVideo;Video;Player;Network;
+Keywords=youtube;video;player;
+MimeType=x-scheme-handler/streamtube;
+StartupWMClass=streamtube
+X-CachyOS-PI-AppImage=/home/jabir/Applications/StreamTube-0.6.0-alpha-x86_64-2.AppImage
+TryExec=/home/jabir/Applications/StreamTube-0.6.0-alpha-x86_64-2.AppImage

@@ -7,3 +7,4 @@ Terminal=false
 Type=Application
 Icon=utilities-terminal
 StartupNotify=true
+TryExec=app-manager
