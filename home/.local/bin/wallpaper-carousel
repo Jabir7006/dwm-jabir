@@ -38,6 +38,7 @@
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -327,12 +328,17 @@ def current_wallpaper():
             text = fh.read()
     except OSError:
         return None
-    m = re.search(r"--bg-fill\s+(?:'([^']+)'|\"([^\"]+)\"|(\S+))", text)
-    if not m:
-        return None
-    path = next((g for g in m.groups() if g), "")
-    path = os.path.expanduser(path)
-    return path if path and os.path.isfile(path) else None
+    for line in text.splitlines():
+        try:
+            args = shlex.split(line, comments=True)
+            index = args.index("--bg-fill")
+        except (ValueError, IndexError):
+            continue
+        for item in args[index + 1:]:
+            path = os.path.expanduser(item)
+            if os.path.isfile(path):
+                return path
+    return None
 
 
 def find_wallpapers():
@@ -1780,10 +1786,34 @@ class Carousel(Gtk.Application):
         return proc
 
     def _end_apply(self):
+        if self.apply_proc is None or self.apply_proc.poll() != 0:
+            self.apply_proc = None
+            self.applying = False
+            if self.apply_overlay is not None:
+                self.apply_overlay.set_visible(False)
+            if self.hud is not None:
+                self.hud.set_visible(True)
+            self.reveal_tgt = 1.0
+            self.tick_id = 0
+            GLib.idle_add(self._start_anim)
+            message = "Could not apply the selected image. Check wallpaper-apply from a terminal."
+            print("wallpaper-carousel: " + message, file=sys.stderr)
+            if shutil.which("notify-send"):
+                try:
+                    subprocess.Popen(["notify-send", "--urgency=critical", "Wallpaper", message], start_new_session=True)
+                except OSError:
+                    pass
+            return
         # Leave the overlay in place: the window is torn down next, and hiding
         # it first could flash one frame of the outgoing wallpaper.
         self.apply_proc = None
         self.quit()
+
+    def _wait_apply(self):
+        if self.apply_proc is not None and self.apply_proc.poll() is None:
+            return True
+        self._end_apply()
+        return False
 
     def apply(self):
         if self.applying:
@@ -1801,8 +1831,9 @@ class Carousel(Gtk.Application):
                 except (GLib.Error, OSError):
                     texture = None
         if texture is None or self.apply_overlay is None:
-            self._run_apply(path)
-            self.quit()
+            self.applying = True
+            self.apply_proc = self._run_apply(path)
+            GLib.timeout_add(50, self._wait_apply)
             return
 
         self.applying = True

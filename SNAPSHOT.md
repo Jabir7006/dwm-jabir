@@ -18,7 +18,19 @@ only during export.
 | `system-config/usr/local/bin/` | custom `/usr/local/bin` helpers |
 | `system-config/reference/etc/` | reference copies of public system configuration |
 
-The saved `.fehbg` selects the existing wallpaper. Polybar uses the saved laptop
+The saved `.fehbg` initially selects Ristretto industrial moon; installer reruns
+keep the user's later selection. The wallpaper bundle contains five small images
+(about 523 KiB total), including that Ristretto wallpaper. Snapshot refreshes keep
+this curated bundle. Existing images in an installation are left in place.
+
+Picker, carousel, and random selection use `wallpaper-apply`: it applies and saves
+the image before optional palette generation, so missing or failing palette tools
+cannot undo the selection. Palette errors are recorded in
+`~/.cache/wallpaper-picker/apply.log`. The carousel stays open if applying fails.
+Text files default to l3afpad, which is installed with the core packages. Image
+files use `nsxiv -b %f`, with its status bar hidden and each file passed once.
+
+Polybar uses the saved laptop
 layout on both laptops and VMs; missing battery/backlight modules are omitted
 without switching the remaining modules to another layout. Fastfetch keeps the
 saved configuration. Machine readings, available hardware, and OS-specific logo

@@ -12,20 +12,4 @@ file="$(find "$WALL_DIR" -maxdepth 1 -type f \
     2>/dev/null | shuf -n 1)"
 [ -n "${file:-}" ] || exit 1
 
-active="$(awk -F'"' '/^\[active\]/{f=1} f&&/theme =/{print $2; exit}' \
-    "${XDG_CONFIG_HOME:-$HOME/.config}/dwm-titus/themes.toml" 2>/dev/null)"
-if [ -x "$HOME/.local/bin/theme-set-dynamic" ]; then
-    if [ "$active" = "dynamic" ]; then
-        out="$("$HOME/.local/bin/theme-set-dynamic" "$file" 2>&1 | tail -n 1)"
-        command -v notify-send >/dev/null 2>&1 && notify-send "Dynamic theme" "${out:-applied}" 2>/dev/null &
-    else
-        # Static theme active: refresh [theme.dynamic] for later use and set the
-        # picture, but leave the running theme alone.
-        "$HOME/.local/bin/theme-set-dynamic" --stage-only "$file" >/dev/null 2>&1
-        command -v notify-send >/dev/null 2>&1 && notify-send "Wallpaper" "$(basename "$file")" 2>/dev/null &
-    fi
-    exit 0
-fi
-
-feh --randomize --bg-fill "$WALL_DIR"/*
-command -v notify-send >/dev/null 2>&1 && notify-send "Wallpaper" "shuffled" 2>/dev/null &
+exec "$HOME/.local/bin/wallpaper-apply" "$file"

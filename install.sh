@@ -670,6 +670,10 @@ deploy_home() {
     [[ -f "$f" ]] || continue
     name="$(basename "$f")"
     [[ "$name" != .xinitrc ]] || continue
+    # A rerun must keep the wallpaper chosen since the previous installation.
+    if [[ "$name" == .fehbg && -s "$HOME/.fehbg" ]]; then
+      continue
+    fi
     mode=644
     [[ ! -x "$f" && "$f" != *.sh && "$f" != *.py ]] || mode=755
     deploy_file_sed "$f" "$HOME/$name" "$mode"

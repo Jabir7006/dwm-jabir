@@ -203,6 +203,106 @@ esac
         self.assertEqual(parser["bar/main"]["modules-right"].split(), ["pulseaudio", "warp", "sink-toggle", "tray", "powermenu"])
 
 
+class WallpaperTests(DesktopFixture):
+    def setUp(self):
+        super().setUp()
+        self.user_bin = self.home / ".local/bin"
+        self.user_bin.mkdir(parents=True)
+        for name in ("wallpaper-apply", "wallpaper-picker.sh", "wallpaper-random.sh"):
+            shutil.copy2(REPO / "home/.local/bin" / name, self.user_bin / name)
+        self.walls = self.home / "Pictures/backgrounds"
+        self.walls.mkdir(parents=True)
+        self.image = self.walls / "Jabir's wallpaper.webp"
+        self.image.write_bytes(b"mock image")
+        themes = self.home / ".config/dwm-titus/themes.toml"
+        themes.parent.mkdir(parents=True)
+        themes.write_text('[active]\ntheme = "ristretto"\n')
+        self.command("notify-send", "exit 0\n")
+        self.command("feh", '''
+printf 'image %s\\n' "$2" >> "$HOME/apply-events"
+printf '%s' "$2" > "$HOME/selected-image"
+printf '#!/bin/sh\\nfeh --no-fehbg --bg-fill "%s"\\n' "$2" > "$HOME/.fehbg"
+''')
+
+    def palette_helper(self, body):
+        helper = self.user_bin / "theme-set-dynamic"
+        helper.write_text("#!/bin/bash\n" + body)
+        helper.chmod(0o755)
+
+    def apply(self):
+        return subprocess.run([str(self.user_bin / "wallpaper-apply"), str(self.image)], env=self.env, text=True, capture_output=True, timeout=10)
+
+    def test_palette_failure_still_applies_and_saves_the_image(self):
+        self.palette_helper('printf "palette failed\\n"; exit 1\n')
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.home / "selected-image").read_text(), str(self.image))
+        self.assertIn(str(self.image), (self.home / ".fehbg").read_text())
+        self.assertIn("palette failed", (self.home / ".cache/wallpaper-picker/apply.log").read_text())
+        self.assertIn("palette update failed", result.stderr)
+
+    def test_static_and_dynamic_palettes_never_repaint_the_image(self):
+        self.palette_helper('printf "palette %s\\n" "$*" >> "$HOME/apply-events"\n')
+        for active in ("ristretto", "dynamic"):
+            with self.subTest(active=active):
+                (self.home / ".config/dwm-titus/themes.toml").write_text(f'[active]\ntheme = "{active}"\n')
+                (self.home / "apply-events").unlink(missing_ok=True)
+                result = self.apply()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                events = (self.home / "apply-events").read_text().splitlines()
+                self.assertEqual(events[0], "image " + str(self.image))
+                self.assertIn("--no-wallpaper", events[1])
+                self.assertEqual("--stage-only" in events[1], active != "dynamic")
+                self.assertEqual(len(events), 2)
+
+    def test_feh_failure_preserves_selection_and_reports_failure(self):
+        previous = '#!/bin/sh\n# previous selection\n'
+        (self.home / ".fehbg").write_text(previous)
+        self.command("feh", "exit 9\n")
+        self.palette_helper('touch "$HOME/palette-ran"\n')
+        result = self.apply()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.home / ".fehbg").read_text(), previous)
+        self.assertFalse((self.home / "palette-ran").exists())
+
+    def test_rapid_selections_finish_with_the_newer_image(self):
+        self.palette_helper('printf "palette start\\n" >> "$HOME/apply-events"; sleep 0.2; printf "palette end\\n" >> "$HOME/apply-events"\n')
+        first = subprocess.Popen([str(self.user_bin / "wallpaper-apply"), str(self.image)], env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(GraphicalSmokeTests.stop_process, first)
+        for _ in range(100):
+            if (self.home / "apply-events").exists():
+                break
+            time.sleep(0.01)
+        newer = self.walls / "newer.webp"
+        newer.write_bytes(b"mock newer image")
+        second = subprocess.run([str(self.user_bin / "wallpaper-apply"), str(newer)], env=self.env, capture_output=True, text=True, timeout=10)
+        _, stderr = first.communicate(timeout=10)
+        self.assertEqual(first.returncode, 0, stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        events = (self.home / "apply-events").read_text().splitlines()
+        self.assertEqual(events, ["image " + str(self.image), "palette start", "palette end", "image " + str(newer), "palette start", "palette end"])
+        self.assertEqual((self.home / "selected-image").read_text(), str(newer))
+
+    def test_picker_and_random_use_the_same_apply_path(self):
+        self.palette_helper('exit 1\n')
+        self.command("rofi", 'printf "%s\\n" "Jabir\'s wallpaper.webp"\n')
+        self.command("nsxiv", 'printf "%s\\n" "$HOME/Pictures/backgrounds/Jabir\'s wallpaper.webp"\n')
+        self.command("magick", "exit 1\n")
+        for name, args in (("wallpaper-picker.sh", []), ("wallpaper-picker.sh", ["--nsxiv"]), ("wallpaper-random.sh", [])):
+            with self.subTest(name=name, args=args):
+                (self.home / "selected-image").unlink(missing_ok=True)
+                result = subprocess.run([str(self.user_bin / name), *args], env=self.env, text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((self.home / "selected-image").read_text(), str(self.image))
+
+    def test_bundle_has_five_small_images_and_keeps_ristretto(self):
+        images = list((REPO / "wallpapers").iterdir())
+        self.assertEqual({path.name for path in images}, set(snapshot_module.WALLPAPER_FILES))
+        self.assertEqual(len(images), 5)
+        self.assertIn("ristretto-3-industrial-moon.webp", {path.name for path in images})
+        self.assertLess(sum(path.stat().st_size for path in images), 600 * 1024)
+
+
 class GraphicalSmokeTests(DesktopFixture):
     def setUp(self):
         super().setUp()
@@ -214,7 +314,9 @@ class GraphicalSmokeTests(DesktopFixture):
             self.skipTest("No private test display is available")
         self.env["DISPLAY"] = f":{display_number}"
         self.xlog = (self.root / "xvfb.log").open("w")
-        self.server = subprocess.Popen([xvfb, self.env["DISPLAY"], "-screen", "0", "1280x720x24", "-nolisten", "tcp", "-ac"], env=self.env, stdout=self.xlog, stderr=subprocess.STDOUT)
+        # Keep root-window state between short-lived feh/xprop clients. Without
+        # this Xvfb resets when its last client exits, unlike a desktop with DWM.
+        self.server = subprocess.Popen([xvfb, self.env["DISPLAY"], "-screen", "0", "1280x720x24", "-nolisten", "tcp", "-noreset", "-ac"], env=self.env, stdout=self.xlog, stderr=subprocess.STDOUT)
         self.addCleanup(self.stop_process, self.server)
         self.addCleanup(self.xlog.close)
         for _ in range(50):
@@ -276,6 +378,54 @@ class GraphicalSmokeTests(DesktopFixture):
         subprocess.run(["xdotool", "keydown", "--window", window, "Escape"], env=self.env, check=True, capture_output=True)
         manager.wait(timeout=5)
         self.assertNotEqual(manager.returncode, 127)
+
+    def test_carousel_selection_reaches_the_desktop_after_the_preview_closes(self):
+        if not shutil.which("feh") or not shutil.which("xprop"):
+            self.skipTest("Wallpaper GUI test requires feh and xprop")
+        user_bin = self.home / ".local/bin"
+        user_bin.mkdir(parents=True)
+        shutil.copy2(REPO / "home/.local/bin/wallpaper-apply", user_bin / "wallpaper-apply")
+        palette = user_bin / "theme-set-dynamic"
+        palette.write_text("#!/bin/sh\necho 'mock palette failure' >&2\nexit 1\n")
+        palette.chmod(0o755)
+        self.command("notify-send", "exit 0\n")
+        walls = self.home / "Pictures/backgrounds"
+        walls.mkdir(parents=True)
+        first = walls / "a.webp"
+        second = walls / "b.webp"
+        shutil.copy2(REPO / "wallpapers/ristretto-0-launch.webp", first)
+        shutil.copy2(REPO / "wallpapers/ristretto-3-industrial-moon.webp", second)
+        state = self.home / ".local/state/wallpaper-carousel/state"
+        state.parent.mkdir(parents=True)
+        for animations in ("off", "on"):
+            with self.subTest(animations=animations):
+                state.write_text(animations)
+                subprocess.run(["feh", "--bg-fill", str(first)], env=self.env, check=True, capture_output=True)
+                before = subprocess.check_output(["xprop", "-root", "_XROOTPMAP_ID"], env=self.env, text=True)
+                failing_feh = self.command("feh", 'printf "%s" "$2" > "$HOME/attempted-image"; exit 9\n')
+                log = (self.root / f"carousel-{animations}.log").open("w")
+                self.addCleanup(log.close)
+                carousel = subprocess.Popen(["/usr/bin/python3", str(REPO / "home/.local/bin/wallpaper-carousel")], env={**self.env, "GSK_RENDERER": "cairo"}, stdout=log, stderr=subprocess.STDOUT)
+                self.addCleanup(self.stop_process, carousel)
+                window = self.mapped_window("wallpaper-carousel")
+                subprocess.run(["xdotool", "windowfocus", "--sync", window], env=self.env, check=True, capture_output=True)
+                subprocess.run(["xdotool", "key", "End"], env=self.env, check=True, capture_output=True)
+                subprocess.run(["xdotool", "key", "Return"], env=self.env, check=True, capture_output=True)
+                for _ in range(100):
+                    if "wallpaper-carousel: Could not apply" in (self.root / f"carousel-{animations}.log").read_text():
+                        break
+                    time.sleep(0.05)
+                self.assertIsNone(carousel.poll(), "Carousel closed despite the failed wallpaper update")
+                self.assertEqual((self.home / "attempted-image").read_text(), str(second))
+                self.assertIn(str(first), (self.home / ".fehbg").read_text())
+                failing_feh.unlink()
+                subprocess.run(["xdotool", "key", "Return"], env=self.env, check=True, capture_output=True)
+                carousel.wait(timeout=15)
+                self.assertEqual(carousel.returncode, 0, (self.root / f"carousel-{animations}.log").read_text())
+                time.sleep(0.3)
+                self.assertIn(str(second), (self.home / ".fehbg").read_text())
+                after = subprocess.check_output(["xprop", "-root", "_XROOTPMAP_ID"], env=self.env, text=True)
+                self.assertNotEqual(before, after)
 
 
 if __name__ == "__main__":

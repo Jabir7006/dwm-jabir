@@ -6,6 +6,7 @@
 #   theme-set-dynamic ~/pic/wall.jpg   # use this wallpaper
 #   theme-set-dynamic --stage-only ... # regenerate [theme.dynamic] and set the
 #                                      # picture, but do NOT re-apply the theme
+#   theme-set-dynamic --no-wallpaper ... # palette only; caller already set/saved the image
 #
 # What it does (in order, aborts on first failure without changing anything):
 #   1. resolves + validates the wallpaper (must be a readable image)
@@ -33,10 +34,12 @@ command -v matugen &>/dev/null || {
 
 # ── Resolve wallpaper ─────────────────────────────────────────────────────────
 STAGE_ONLY=""
+NO_WALLPAPER=""
 args=()
 for arg in "$@"; do
     case "$arg" in
         --stage-only) STAGE_ONLY=1 ;;
+        --no-wallpaper) NO_WALLPAPER=1 ;;
         *) args+=("$arg") ;;
     esac
 done
@@ -52,7 +55,7 @@ fi
 [[ -f "$WALLPAPER" ]] || { echo "theme-set-dynamic: not a file: $WALLPAPER" >&2; exit 1; }
 
 # Must be a readable image (also detects the dark/light scheme correctly).
-python3 -c "from PIL import Image; Image.open('$WALLPAPER').verify()" 2>/dev/null || {
+python3 -c 'from PIL import Image; import sys; Image.open(sys.argv[1]).verify()' "$WALLPAPER" 2>/dev/null || {
     echo "theme-set-dynamic: not a readable image: $WALLPAPER" >&2
     exit 1
 }
@@ -62,7 +65,7 @@ python3 -c "from PIL import Image; Image.open('$WALLPAPER').verify()" 2>/dev/nul
 # --prefer saturation: non-interactive source-color choice (most vivid hue).
 # -m: scheme mode chosen from wallpaper luminance (single fast run).
 TMP_BLOCK="$(mktemp)"
-WALL_MODE="$(python3 -c "from PIL import Image, ImageStat; im=Image.open('$WALLPAPER').convert('L').resize((64,64)); print('dark' if ImageStat.Stat(im).mean[0]/255 < 0.45 else 'light')")"
+WALL_MODE="$(python3 -c 'from PIL import Image, ImageStat; import sys; im=Image.open(sys.argv[1]).convert("L").resize((64,64)); print("dark" if ImageStat.Stat(im).mean[0]/255 < 0.45 else "light")' "$WALLPAPER")"
 TMP_JSON="$(mktemp)"
 MATUGEN_LOG="/tmp/theme-set-dynamic.log"
 if ! matugen image "$WALLPAPER" --json hex --dry-run --prefer saturation -m "$WALL_MODE" >"$TMP_JSON" 2>"$MATUGEN_LOG" \
@@ -116,7 +119,9 @@ rm -f "$THEMES_FILE.dynamic-bak"
 # Always run the full apply: it renders ONLY [active], so this can never
 # desync generated files from themes.toml (staging without applying is
 # what caused stale colors in the past).
-feh --bg-fill "$WALLPAPER" 2>/dev/null || echo "theme-set-dynamic: feh failed" >&2
+if [[ -z "$NO_WALLPAPER" ]]; then
+    feh --bg-fill "$WALLPAPER" || { echo "theme-set-dynamic: feh failed" >&2; exit 1; }
+fi
 ACTIVE="$(awk -F'"' '/^\[active\]/{f=1} f&&/theme =/{print $2; exit}' "$THEMES_FILE")"
 if [[ -n "$STAGE_ONLY" ]]; then
     # Palette regenerated and picture set, but no reload: used by the wallpaper

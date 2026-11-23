@@ -18,7 +18,6 @@ icoutils
 intel-gpu-tools
 intel-media-driver
 iw
-l3afpad
 lib32-gamemode
 lib32-mangohud
 lib32-mesa

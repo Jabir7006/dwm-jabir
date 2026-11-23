@@ -6,28 +6,48 @@
 #
 #   wallpaper-apply ~/Pictures/backgrounds/foo.jpg
 #
-# When the active theme is "dynamic", colors are regenerated from the new
-# picture via theme-set-dynamic. Under a static theme the picture is set and
-# [theme.dynamic] is only staged for later use — the running theme is untouched.
+# Apply and save the picture first. Palette generation must never prevent a
+# wallpaper change or repaint an earlier selection after a later one.
 
-file="$1"
+file="${1:-}"
 [ -n "${file:-}" ] || { echo "wallpaper-apply: usage: wallpaper-apply <image>" >&2; exit 1; }
-[ -f "$file" ] || { echo "wallpaper-apply: not found: $file" >&2; exit 1; }
+[ -f "$file" ] && [ -r "$file" ] || { echo "wallpaper-apply: not readable: $file" >&2; exit 1; }
+file="$(realpath -- "$file")" || exit 1
+
+notify() {
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send --urgency="$1" "Wallpaper" "$2" 9>&- 2>/dev/null &
+    fi
+}
+
+umask 077
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/wallpaper-picker"
+mkdir -p "$cache" || exit 1
+# Serialize picture/palette updates, including rapid selections from both UIs.
+exec 9>>"$cache/apply.lock" || exit 1
+flock -w 45 9 || { echo "wallpaper-apply: another update is still running" >&2; exit 1; }
+if ! feh --bg-fill "$file"; then
+    echo "wallpaper-apply: failed to set $file" >&2
+    notify critical "Could not apply or save the selected image."
+    exit 1
+fi
 
 active="$(awk -F'"' '/^\[active\]/{f=1} f&&/theme =/{print $2; exit}' \
     "${XDG_CONFIG_HOME:-$HOME/.config}/dwm-titus/themes.toml" 2>/dev/null)"
 
 if [ -x "$HOME/.local/bin/theme-set-dynamic" ]; then
-    if [ "$active" = "dynamic" ]; then
-        out="$("$HOME/.local/bin/theme-set-dynamic" "$file" 2>&1 | tail -n 1)"
-        command -v notify-send >/dev/null 2>&1 && notify-send "Dynamic theme" "${out:-applied}" 2>/dev/null &
-    else
-        "$HOME/.local/bin/theme-set-dynamic" --stage-only "$file" >/dev/null 2>&1
-        command -v notify-send >/dev/null 2>&1 && notify-send "Wallpaper" "$(basename "$file")" 2>/dev/null &
+    set -- --no-wallpaper "$file"
+    [ "$active" = dynamic ] || set -- --stage-only "$@"
+    if ! timeout 30 "$HOME/.local/bin/theme-set-dynamic" "$@" >"$cache/apply.log" 2>&1; then
+        echo "wallpaper-apply: image applied; palette update failed (see $cache/apply.log)" >&2
+        notify normal "Image applied. Palette update failed; see $cache/apply.log."
+        exit 0
     fi
+elif [ "$active" = dynamic ]; then
+    echo "wallpaper-apply: image applied; theme-set-dynamic is unavailable" >&2
+    notify normal "Image applied. Dynamic theme helper is unavailable."
     exit 0
 fi
 
-feh --bg-fill "$file"
-command -v notify-send >/dev/null 2>&1 && notify-send "Wallpaper" "$(basename "$file")" 2>/dev/null &
+notify normal "$(basename "$file")"
 exit 0

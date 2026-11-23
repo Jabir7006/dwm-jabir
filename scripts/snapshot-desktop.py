@@ -41,6 +41,14 @@ HOME_FILES = {
     ".gtkrc-2.0", ".lmmsrc.xml", ".npmrc", ".profile", ".xinitrc",
     ".xprofile", ".yarnrc", ".zshrc", "picom.conf",
 }
+# Keep the small, approved bundle when refreshing the desktop snapshot.
+WALLPAPER_FILES = (
+    "ristretto-3-industrial-moon.webp",
+    "wallpaperflare.com_wallpaper.jpg",
+    "ristretto-1-color-curves.webp",
+    "ristretto-0-launch.webp",
+    "1920x1080_anime_a_person_standing_on_a_broken_object_in_a_field_with_a_large_white_moon.jpg",
+)
 PORTABLE_OVERRIDES = {
     "config/fish/config.fish", "config/fish/conf.d/fnm.fish",
     "config/fish/conf.d/rustup.fish", "config/mpv/mpv.conf",
@@ -50,13 +58,18 @@ PORTABLE_OVERRIDES = {
     "config/polybar/scripts/weather/main.py", "config/polybar/scripts/weather/weather.sh",
     "config/polybar/themes/minimal/modules/weather.ini",
     "config/pipewire/pipewire.conf.d/roc-sink.conf",
+    "config/mimeapps.list",
     "home/.profile", "home/.xprofile", "home/.xinitrc",
     "home/.bashrc", "home/.zshrc", "home/.local/bin/codex",
     "home/.local/bin/app-manager",
+    "home/.fehbg", "home/.local/bin/wallpaper-apply",
+    "home/.local/bin/wallpaper-picker.sh", "home/.local/bin/wallpaper-random.sh",
+    "home/.local/bin/wallpaper-carousel", "home/.local/bin/theme-set-dynamic",
     "home/user_scripts/wayclick/dusky_wayclick.sh",
     "applications/cineo.desktop", "applications/deepai-code.desktop",
     "applications/org.deepai.code.desktop", "applications/Opencode.desktop",
     "applications/Warp.desktop", "applications/Minitop.desktop",
+    "applications/nsxiv.desktop", "applications/userapp-nsxiv -b %f-VDA9P3.desktop",
 }
 PRIVATE_COMPONENTS = {
     "auth", "authentication", "human-auth", "credentials", "secrets", "keys",
@@ -375,9 +388,15 @@ class Snapshot:
             (".local/share/applications", "applications"),
             (".local/share/icons", "home/.local/share/icons"),
             (".local/share/fonts", "fonts"),
-            ("Pictures/backgrounds", "wallpapers"),
         ):
             self.tree(self.home / source, self.repo / destination)
+        backgrounds = self.home / "Pictures/backgrounds"
+        if backgrounds.is_dir():
+            for item in sorted(backgrounds.iterdir()):
+                if item.name in WALLPAPER_FILES:
+                    self.copy(item, self.repo / "wallpapers" / item.name)
+                else:
+                    self.omit(item, "outside the approved five-wallpaper bundle")
         # Preserve the separate /usr/local helpers; do not replace the newer
         # theme script in the DWM data directory with a different PATH copy.
         self.tree(Path("/usr/local/bin"), self.repo / "system-config/usr/local/bin")

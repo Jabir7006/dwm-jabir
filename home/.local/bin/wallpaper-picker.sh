@@ -17,28 +17,7 @@ err() {
 }
 
 apply() {
-    file="$1"
-    [ -f "$file" ] || err "not found: $file"
-    # When the dynamic theme is active, regenerate colors from the new
-    # wallpaper; otherwise just set the picture (static themes keep colors).
-    active="$(awk -F'"' '/^\[active\]/{f=1} f&&/theme =/{print $2; exit}' \
-        "${XDG_CONFIG_HOME:-$HOME/.config}/dwm-titus/themes.toml" 2>/dev/null)"
-    # Always regenerate [theme.dynamic] from the new picture, whichever theme is
-    # active. Otherwise picking a wallpaper under a static theme and switching to
-    # dynamic later shows the palette of a wallpaper that is no longer on screen.
-    if [ -x "$HOME/.local/bin/theme-set-dynamic" ]; then
-        if [ "$active" = "dynamic" ]; then
-            out="$("$HOME/.local/bin/theme-set-dynamic" "$file" 2>&1 | tail -n 1)"
-            command -v notify-send >/dev/null 2>&1 && notify-send "Dynamic theme" "${out:-applied}" 2>/dev/null &
-        else
-            "$HOME/.local/bin/theme-set-dynamic" --stage-only "$file" >/dev/null 2>&1
-            command -v notify-send >/dev/null 2>&1 && notify-send "Wallpaper" "$(basename "$file")" 2>/dev/null &
-        fi
-        exit 0
-    fi
-    feh --bg-fill "$file"
-    command -v notify-send >/dev/null 2>&1 && notify-send "Wallpaper" "$(basename "$file")" 2>/dev/null &
-    exit 0
+    exec "$HOME/.local/bin/wallpaper-apply" "$1"
 }
 
 command -v feh >/dev/null 2>&1 || err "feh not installed"

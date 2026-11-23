@@ -309,6 +309,19 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue((self.home / ".local/bin/wayclick").is_symlink())
         self.assertEqual(len(list(self.home.glob(".config-backup-*"))), 2)
 
+    def test_deployment_rerun_preserves_the_users_wallpaper_selection(self):
+        self.seed_deployment()
+        initial = self.repo / "home/.fehbg"
+        initial.write_text('#!/bin/sh\n# saved Ristretto default\n')
+        initial.chmod(0o755)
+        self.assert_success(self.run_bash(FULL_MAIN, DEPLOY_ONLY="1"))
+        saved = self.home / ".fehbg"
+        self.assertEqual(saved.read_text(), initial.read_text())
+        selected = '#!/bin/sh\n# user picked a different wallpaper\n'
+        saved.write_text(selected)
+        self.assert_success(self.run_bash(FULL_MAIN, DEPLOY_ONLY="1"))
+        self.assertEqual(saved.read_text(), selected)
+
     def test_backups_keep_original_files_and_do_not_nest_directories(self):
         config = self.home / ".config/fish"
         config.mkdir(parents=True)

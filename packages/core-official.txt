@@ -40,6 +40,7 @@ gvfs-mtp
 imagemagick
 imlib2
 jq
+l3afpad
 libmtp
 libnotify
 libpulse
@@ -76,6 +77,7 @@ pipewire-pulse
 polybar
 python
 python-gobject
+python-pillow
 python-psutil
 python-requests
 python-rich
