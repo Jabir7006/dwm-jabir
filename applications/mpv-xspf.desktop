@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=mpv (XSPF)
+Comment=Play XSPF playlists with mpv
+Exec=mpv-xspf %f
+Terminal=false
+MimeType=application/xspf+xml;
+NoDisplay=true

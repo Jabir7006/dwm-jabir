@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+"""theme-audit — verify every layer matches the active theme in themes.toml.
+
+Reads the active theme, recomputes what theme-apply.sh should have generated,
+and compares against the actual files + gsettings. Prints OK/FAIL per layer.
+
+Usage: theme-audit
+Exit code: 0 = all match, 1 = something drifted (just re-save themes.toml
+           or run theme-apply.sh to heal).
+"""
+import os
+import re
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+CFG = os.environ.get("XDG_CONFIG_HOME", HOME + "/.config")
+THEMES = CFG + "/dwm-titus/themes.toml"
+
+pass_count = 0
+fail_count = 0
+
+
+def check(name, expected, actual):
+    global pass_count, fail_count
+    exp = (expected or "").strip().lower()
+    got = (actual or "").strip().lower()
+    if exp == got:
+        pass_count += 1
+        print(f"  OK   {name}")
+    else:
+        fail_count += 1
+        print(f"  FAIL {name}: expected {expected!r}, got {actual!r}")
+
+
+def parse_themes(path):
+    sections, cur = {}, None
+    with open(path) as f:
+        for line in f:
+            m = re.match(r"^\[(.+?)\]", line.strip())
+            if m:
+                cur = m.group(1)
+                sections[cur] = {}
+                continue
+            m2 = re.match(r'^\s*([A-Za-z0-9_]+)\s*=\s*(?:"([^"]*)"|(\S+))', line)
+            if cur and m2 and not line.strip().startswith("#"):
+                val = m2.group(2) if m2.group(2) is not None else m2.group(3)
+                sections[cur].setdefault(m2.group(1), val.strip())
+    return sections
+
+
+def gsettings(schema, key):
+    try:
+        out = subprocess.run(
+            ["gsettings", "get", schema, key],
+            capture_output=True, text=True, timeout=5,
+        )
+        return out.stdout.strip().strip("'")
+    except Exception:
+        return None
+
+
+def grep_value(path, pattern, group=1):
+    try:
+        with open(path) as f:
+            for line in f:
+                m = re.search(pattern, line)
+                if m:
+                    return m.group(group).strip().strip('";').strip()
+    except FileNotFoundError:
+        return None
+    return None
+
+
+def main():
+    if not os.path.exists(THEMES):
+        print("themes.toml not found")
+        return 1
+    pal = parse_themes(THEMES)
+    active = pal.get("active", {}).get("theme", "").split()[0]
+    key = "theme." + active
+    if key not in pal:
+        print(f"active theme {active!r} not defined")
+        return 1
+    d = pal[key]
+    dark = d.get("dark_mode", "true") != "false"
+    print(f"active theme: {active} ({'dark' if dark else 'light'})")
+
+    # Expected values (mirrors theme-apply.sh mapping)
+    def darken(hex_color, f=0.75):
+        h = hex_color.lstrip("#")
+        c = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+        return "#" + "".join(f"{round(v * f):02X}" for v in c)
+
+    exp_gtk_bg = d.get("gtk_bg")
+    if not exp_gtk_bg:
+        exp_gtk_bg = darken(d["term_bg"]) if dark else d["polybar_bg_alt"]
+    if d.get("gtk_base"):
+        exp_gtk_base = d["gtk_base"]
+    elif dark:
+        exp_gtk_base = d["term_bg"]
+    else:
+        exp_gtk_base = d["term_bg"]
+    exp_gtk_border = d.get("gtk_border") or d["selbordercolor"]
+    exp_muted = d.get("gtk_muted") or d["term_color8"]
+
+    def mix(h1, h2, t=0.4):
+        a = [int(h1.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+        b = [int(h2.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+        return "#" + "".join(f"{round(x * t + y * (1 - t)):02X}" for x, y in zip(a, b))
+
+    exp_entry = mix(d["selbordercolor"], exp_gtk_bg)
+    exp_icon = "Papirus-Dynamic"
+    exp_scheme = "prefer-dark" if dark else "default"
+    exp_tag_active = d["term_fg"] if dark else d["selbordercolor"]
+
+    print("== desktop portal ==")
+    check("gsettings color-scheme", exp_scheme,
+          gsettings("org.gnome.desktop.interface", "color-scheme"))
+    check("gsettings icon-theme", exp_icon,
+          gsettings("org.gnome.desktop.interface", "icon-theme"))
+
+    print("== GTK ==")
+    check("gtk3 prefer-dark", "1" if dark else "0",
+          grep_value(f"{CFG}/gtk-3.0/settings.ini", r"^gtk-application-prefer-dark-theme=(.*)"))
+    check("gtk3 icon", exp_icon,
+          grep_value(f"{CFG}/gtk-3.0/settings.ini", r"^gtk-icon-theme-name=(.*)"))
+    check("gtk4 icon", exp_icon,
+          grep_value(f"{CFG}/gtk-4.0/settings.ini", r"^gtk-icon-theme-name=(.*)"))
+    check("xsettingsd icon", exp_icon,
+          grep_value(f"{CFG}/xsettingsd/xsettingsd.conf", r"^Net/IconThemeName\s+(.*)"))
+    check("active-gtk bg", exp_gtk_bg,
+          grep_value(f"{CFG}/gtk-3.0/active-gtk.css", r"@define-color gtk_bg\s+(#[0-9a-fA-F]+)"))
+    check("active-gtk base", exp_gtk_base,
+          grep_value(f"{CFG}/gtk-3.0/active-gtk.css", r"@define-color gtk_base\s+(#[0-9a-fA-F]+)"))
+    check("active-gtk fg", d["term_fg"],
+          grep_value(f"{CFG}/gtk-3.0/active-gtk.css", r"@define-color gtk_fg\s+(#[0-9a-fA-F]+)"))
+    check("active-gtk accent", d["selbordercolor"],
+          grep_value(f"{CFG}/gtk-3.0/active-gtk.css", r"@define-color gtk_accent\s+(#[0-9a-fA-F]+)"))
+    check("active-gtk border", exp_gtk_border,
+          grep_value(f"{CFG}/gtk-3.0/active-gtk.css", r"@define-color gtk_border\s+(#[0-9a-fA-F]+)"))
+    check("active-gtk muted", exp_muted,
+          grep_value(f"{CFG}/gtk-3.0/active-gtk.css", r"@define-color gtk_muted\s+(#[0-9a-fA-F]+)"))
+    check("active-gtk entry", exp_entry,
+          grep_value(f"{CFG}/gtk-3.0/active-gtk.css", r"@define-color gtk_entry\s+(#[0-9a-fA-F]+)"))
+    exp_sel_bg = d.get("select_bg") or d["selbordercolor"]
+    exp_sel_fg = d.get("select_fg") or exp_gtk_bg
+    check("active-gtk select_bg", exp_sel_bg,
+          grep_value(f"{CFG}/gtk-3.0/active-gtk.css", r"@define-color gtk_select_bg\s+(#[0-9a-fA-F]+)"))
+    check("active-gtk select_fg", exp_sel_fg,
+          grep_value(f"{CFG}/gtk-3.0/active-gtk.css", r"@define-color gtk_select_fg\s+(#[0-9a-fA-F]+)"))
+
+    # Folder-only icon theming: the overlay must point folder.svg at the
+    # theme's chosen Papirus colour (or, for dynamic, at some colour variant).
+    overlay_folder = f"{HOME}/.local/share/icons/Papirus-Dynamic/48x48/places/folder.svg"
+    try:
+        got_folder = os.path.basename(os.path.realpath(overlay_folder))
+    except Exception:
+        got_folder = None
+    exp_folder = d.get("icon_folder")
+    if exp_folder:
+        check("papirus folder colour", f"folder-{exp_folder}.svg", got_folder)
+    else:
+        valid = got_folder if (got_folder and got_folder.startswith("folder-")
+                               and got_folder.endswith(".svg")) else None
+        check("papirus folder colour (auto)", valid or "missing", valid)
+
+    print("== bar + launcher + terminals ==")
+    check("polybar bg", d["polybar_bg"],
+          grep_value(f"{CFG}/polybar/themes/minimal/colors.ini", r"^bg\s+=(.*)"))
+    check("polybar accent", d["polybar_accent"],
+          grep_value(f"{CFG}/polybar/themes/minimal/colors.ini", r"^blue\s+=(.*)"))
+    check("dwm-tags active", exp_tag_active,
+          grep_value(f"{CFG}/polybar/themes/minimal/modules/dwm-tags.ini",
+                     r"^env-DWM_TAG_ACTIVE_COLOR\s*=\s*(.*)"))
+    check("dwm-tags occupied", d["normfgcolor"],
+          grep_value(f"{CFG}/polybar/themes/minimal/modules/dwm-tags.ini",
+                     r"^env-DWM_TAG_OCCUPIED_COLOR\s*=\s*(.*)"))
+    check("rofi bg", d["term_bg"],
+          grep_value(f"{CFG}/rofi/active-colors.rasi", r"bg:\s+(#[0-9a-fA-F]+)"))
+    check("alacritty bg", d["term_bg"],
+          grep_value(f"{CFG}/alacritty/active-theme.toml", r"^background\s*=\s*'(#[0-9a-fA-F]+)'"))
+    check("kitty bg", d["term_bg"],
+          grep_value(f"{CFG}/kitty/active-theme.conf", r"^background\s+(#[0-9a-fA-F]+)"))
+
+    print("== Qt + notifications + browsers ==")
+    qt_conf = f"{CFG}/qt6ct/qt6ct.conf"
+    if os.path.exists(qt_conf):
+        exp_qt = "/usr/share/qt6ct/colors/darker.conf" if dark else ""
+        check("qt6ct scheme", exp_qt,
+              grep_value(qt_conf, r"^color_scheme_path=(.*)"))
+    else:
+        print("  SKIP qt6ct conf (not created yet)")
+    check("dunst bg", d["term_bg"],
+          grep_value(f"{CFG}/dunst/dunstrc", r'background\s*=\s*"?(#[0-9a-fA-F]+)"?'))
+    check("dunst fg", d["term_fg"],
+          grep_value(f"{CFG}/dunst/dunstrc", r'foreground\s*=\s*"?(#[0-9a-fA-F]+)"?'))
+    exp_flag = "dark" if dark else "light"
+    for conf in ("brave-origin-flags.conf", "chrome-flags.conf",
+                 "helium-browser-flags.conf"):
+        path = f"{CFG}/{conf}"
+        if os.path.exists(path):
+            check(f"{conf} scheme", f"--force-prefers-color-scheme={exp_flag}",
+                  grep_value(path, r"^(--force-prefers-color-scheme=\w+)"))
+    exp_frame = d.get("browser_frame") or d["polybar_bg"]
+    for policy in ("/etc/brave/policies/managed/color.json",
+                   "/etc/opt/chrome/policies/managed/color.json"):
+        if os.path.exists(policy):
+            try:
+                import json as _json
+                got = _json.load(open(policy)).get("BrowserThemeColor")
+            except Exception:
+                got = None
+            check(f"policy {policy}", exp_frame, got)
+        else:
+            print(f"  SKIP policy {policy} (needs one-time sudo setup)")
+
+    print(f"\n{pass_count} OK, {fail_count} FAIL")
+    print("Visual check (2 min): open Thunar (sidebar/canvas/selection), "
+          "l3afpad (editor canvas), pavucontrol (Qt), rofi (Super+D), "
+          "a right-click menu, VS Code, and one dark + one light website.")
+    return 1 if fail_count else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

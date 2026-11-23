@@ -1,0 +1,2 @@
+#!/bin/sh
+feh --no-fehbg --bg-fill '/home/jabir/Pictures/backgrounds/ristretto-3-industrial-moon.webp' 

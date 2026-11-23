@@ -1,0 +1,26 @@
+# ─────────────────────────────────────────────────────────────
+# OPTIONAL APPS — AUR (paru/yay)
+# ─────────────────────────────────────────────────────────────
+antigravity-ide
+athas-bin
+bibata-cursor-theme-bin
+brave-origin-bin
+cc-switch-bin
+claude-code
+cliamp-bin
+cloudflare-warp-bin
+cloudstream-desktop-bin
+craft-launcher-bin
+freebuff-bin
+helium-browser-bin
+hydra-download-manager-bin
+libuvc
+misterdownloadmanager-bin
+nbfc-linux
+openai-codex
+opencode-desktop
+openidea-bin
+portproton
+t3code-bin
+vscodium
+yaak

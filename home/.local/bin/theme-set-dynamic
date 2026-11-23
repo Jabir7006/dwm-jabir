@@ -1,0 +1,133 @@
+#!/bin/bash
+# theme-set-dynamic — generate [theme.dynamic] from any wallpaper via matugen.
+#
+# Usage:
+#   theme-set-dynamic                  # pick wallpaper with rofi
+#   theme-set-dynamic ~/pic/wall.jpg   # use this wallpaper
+#   theme-set-dynamic --stage-only ... # regenerate [theme.dynamic] and set the
+#                                      # picture, but do NOT re-apply the theme
+#
+# What it does (in order, aborts on first failure without changing anything):
+#   1. resolves + validates the wallpaper (must be a readable image)
+#   2. runs: matugen image <wallpaper> --json hex
+#   3. maps the Material scheme to theme keys (matugen-dynamic-map)
+#   4. replaces ONLY the [theme.dynamic] section in themes.toml
+#      (every static theme is left byte-identical — verified after write)
+#   5. sets the wallpaper with feh (picture and colors can't drift apart)
+#   6. runs theme-apply.sh (only works fully if [active] is "dynamic";
+#      otherwise the new dynamic block is staged for later use)
+#
+# Switching back to any static theme uses 100% static colors — the dynamic
+# block is ignored unless it is the active theme.
+
+set -euo pipefail
+
+THEMES_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/dwm-titus/themes.toml"
+BG_DIR="$HOME/Pictures/backgrounds"
+APPLY_SCRIPT="$HOME/.local/share/dwm-titus/scripts/theme-apply.sh"
+
+command -v matugen &>/dev/null || {
+    echo "theme-set-dynamic: matugen not installed (sudo pacman -S matugen)" >&2
+    exit 1
+}
+
+# ── Resolve wallpaper ─────────────────────────────────────────────────────────
+STAGE_ONLY=""
+args=()
+for arg in "$@"; do
+    case "$arg" in
+        --stage-only) STAGE_ONLY=1 ;;
+        *) args+=("$arg") ;;
+    esac
+done
+set -- ${args[@]+"${args[@]}"}
+if [[ $# -ge 1 ]]; then
+    WALLPAPER="$1"
+else
+    [[ -d "$BG_DIR" ]] || { echo "theme-set-dynamic: $BG_DIR not found" >&2; exit 1; }
+    pick="$(ls "$BG_DIR" | rofi -dmenu -p "Wallpaper" -i)" || exit 0
+    [[ -n "${pick:-}" ]] || exit 0
+    WALLPAPER="$BG_DIR/$pick"
+fi
+[[ -f "$WALLPAPER" ]] || { echo "theme-set-dynamic: not a file: $WALLPAPER" >&2; exit 1; }
+
+# Must be a readable image (also detects the dark/light scheme correctly).
+python3 -c "from PIL import Image; Image.open('$WALLPAPER').verify()" 2>/dev/null || {
+    echo "theme-set-dynamic: not a readable image: $WALLPAPER" >&2
+    exit 1
+}
+
+# ── Extract + map (nothing is written until this succeeds) ────────────────────
+# --dry-run: JSON to stdout only (no templates, wallpaper, or reloads).
+# --prefer saturation: non-interactive source-color choice (most vivid hue).
+# -m: scheme mode chosen from wallpaper luminance (single fast run).
+TMP_BLOCK="$(mktemp)"
+WALL_MODE="$(python3 -c "from PIL import Image, ImageStat; im=Image.open('$WALLPAPER').convert('L').resize((64,64)); print('dark' if ImageStat.Stat(im).mean[0]/255 < 0.45 else 'light')")"
+TMP_JSON="$(mktemp)"
+MATUGEN_LOG="/tmp/theme-set-dynamic.log"
+if ! matugen image "$WALLPAPER" --json hex --dry-run --prefer saturation -m "$WALL_MODE" >"$TMP_JSON" 2>"$MATUGEN_LOG" \
+    || ! matugen-dynamic-map --from-json "$TMP_JSON" --wallpaper "$WALLPAPER" > "$TMP_BLOCK" 2>>"$MATUGEN_LOG"; then
+    echo "theme-set-dynamic: palette generation failed, nothing changed (see $MATUGEN_LOG)" >&2
+    rm -f "$TMP_BLOCK" "$TMP_JSON"
+    exit 1
+fi
+rm -f "$TMP_JSON"
+[[ -s "$TMP_BLOCK" ]] || { echo "theme-set-dynamic: empty theme block" >&2; exit 1; }
+
+# ── Replace ONLY [theme.dynamic] ──────────────────────────────────────────────
+cp "$THEMES_FILE" "$THEMES_FILE.dynamic-bak"
+if ! grep -q '^\[theme\.dynamic\]' "$THEMES_FILE"; then
+    # Bootstrap with lines that all live inside the guarded range
+    # (guard compares full-file diff vs dynamic-section diff).
+    tail -c1 "$THEMES_FILE" | read -r _ || printf '\n' >> "$THEMES_FILE"
+    printf '[theme.dynamic]\n# placeholder — replaced on first theme-set-dynamic run\n' >> "$THEMES_FILE"
+fi
+python3 - "$THEMES_FILE" "$TMP_BLOCK" <<'EOF'
+import os, re, sys
+path, block_path = sys.argv[1], sys.argv[2]
+text = open(path).read()
+block = open(block_path).read().rstrip() + "\n"
+pattern = re.compile(r"\[theme\.dynamic\].*?(?=^\[|\Z)", re.M | re.S)
+assert pattern.search(text), "no [theme.dynamic] section found"
+new_text = pattern.sub(lambda _: block + "\n", text, count=1)
+# Atomic replace: readers (incl. concurrent theme-apply) never see half text.
+tmp = path + ".newsave"
+open(tmp, "w").write(new_text)
+os.replace(tmp, path)
+EOF
+rm -f "$TMP_BLOCK"
+
+# Safety: the only allowed diff is inside [theme.dynamic].
+if diff <(sed -n '/^\[theme\.dynamic\]/,/^\[/p' "$THEMES_FILE.dynamic-bak" | head -n -1) \
+        <(sed -n '/^\[theme\.dynamic\]/,/^\[/p' "$THEMES_FILE" | head -n -1) >/dev/null; then
+    echo "theme-set-dynamic: WARNING dynamic block unchanged?" >&2
+fi
+OTHER_DIFF="$(diff "$THEMES_FILE.dynamic-bak" "$THEMES_FILE" | grep -c '^[<>]' || true)"
+DYN_DIFF="$(diff <(sed -n '/^\[theme\.dynamic\]/,/^\[/p' "$THEMES_FILE.dynamic-bak") \
+                <(sed -n '/^\[theme\.dynamic\]/,/^\[/p' "$THEMES_FILE") | grep -c '^[<>]' || true)"
+if [[ "$OTHER_DIFF" != "$DYN_DIFF" ]]; then
+    cp "$THEMES_FILE.dynamic-bak" "$THEMES_FILE"
+    echo "theme-set-dynamic: ABORTED — write touched outside [theme.dynamic], restored" >&2
+    exit 1
+fi
+rm -f "$THEMES_FILE.dynamic-bak"
+
+# ── Wallpaper + apply ─────────────────────────────────────────────────────────
+# Always run the full apply: it renders ONLY [active], so this can never
+# desync generated files from themes.toml (staging without applying is
+# what caused stale colors in the past).
+feh --bg-fill "$WALLPAPER" 2>/dev/null || echo "theme-set-dynamic: feh failed" >&2
+ACTIVE="$(awk -F'"' '/^\[active\]/{f=1} f&&/theme =/{print $2; exit}' "$THEMES_FILE")"
+if [[ -n "$STAGE_ONLY" ]]; then
+    # Palette regenerated and picture set, but no reload: used by the wallpaper
+    # pickers when a static theme is active, so [theme.dynamic] can never be
+    # left describing a wallpaper that is no longer on screen.
+    echo "theme-set-dynamic: staged dynamic block for $(basename "$WALLPAPER") (active theme '$ACTIVE' untouched)"
+    exit 0
+fi
+sh "$APPLY_SCRIPT"
+if [[ "$ACTIVE" == "dynamic" ]]; then
+    echo "theme-set-dynamic: applied dynamic theme for $WALLPAPER"
+else
+    echo "theme-set-dynamic: applied '$ACTIVE' (dynamic block refreshed for later use)"
+fi

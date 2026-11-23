@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=FastMirror
+Comment=FastMirror
+Exec=app-manager --run-tui "TUI.float" /home/jabir/custom-scripts/fastmirror.sh
+Terminal=false
+Type=Application
+Icon=utilities-terminal
+StartupNotify=true

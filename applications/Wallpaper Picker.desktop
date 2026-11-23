@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=Wallpaper Picker
+Comment=Pick wallpaper (nsxiv grid, no background process)
+Exec=/home/jabir/.local/bin/wallpaper-picker.sh
+Terminal=false
+Type=Application
+Icon=preferences-desktop-wallpaper
+Categories=Settings;DesktopSettings;
+StartupNotify=true

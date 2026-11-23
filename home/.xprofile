@@ -1,0 +1,16 @@
+xset r rate 200 50
+
+# ── Cursor SIZE — the ONE place to change it ────────────────────────────────
+# Every client that matters reads this through libXcursor: dwm itself, terminals,
+# Qt, Chromium/Electron. nwg-look cannot set it for those apps (it only writes
+# GTK files and never XCURSOR_SIZE), so this line is the source of truth.
+export XCURSOR_SIZE=22
+
+# Mirror that value into the X resource database, for clients that do NOT inherit
+# this session's environment (dbus/systemd-activated helpers, desktop portals).
+# It is derived from the export above, so don't set Xcursor.size anywhere else.
+printf 'Xcursor.size: %s\n' "$XCURSOR_SIZE" | xrdb -merge
+
+# The cursor THEME is not pinned here on purpose: nwg-look manages it (GTK
+# settings.ini + ~/.local/share/icons/default/index.theme) and it already
+# resolves for every toolkit.

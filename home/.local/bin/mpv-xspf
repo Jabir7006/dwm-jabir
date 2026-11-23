@@ -1,0 +1,16 @@
+#!/bin/bash
+file="$1"
+[[ -f "$file" ]] || { echo "File not found"; exit 1; }
+
+mapfile -t urls < <(grep -oP '(?<=<location>)[^<]+' "$file" | sed 's/&amp;/\&/g')
+[[ ${#urls[@]} -gt 0 ]] || { echo "No location found"; exit 1; }
+
+echo "Playing: ${urls[0]}"
+
+exec mpv \
+  --force-window=immediate \
+  --ytdl=no \
+  --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
+  --http-header-fields="Accept: */*,Accept-Language: en-US,en;q=0.9,Referer: https://www.google.com/" \
+  --demuxer-lavf-o=reconnect_streamed=1,reconnect_delay_max=5 \
+  "${urls[@]}"

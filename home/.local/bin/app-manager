@@ -1,0 +1,223 @@
+#!/bin/bash
+# app-manager — unified webapp/TUI create, remove & launch manager for DWM + rofi
+# Usage:
+#   app-manager                          -> open the rofi menu (bind this to a hotkey)
+#   app-manager --run-webapp <url> <cls> -> internal, used by generated .desktop files
+#   app-manager --run-tui <cls> <cmd...> -> internal, used by generated .desktop files
+set -e
+
+ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+DESKTOP_DIR="$HOME/.local/share/applications"
+mkdir -p "$ICON_DIR" "$DESKTOP_DIR"
+
+notify() { notify-send "$@" 2>/dev/null || true; }
+
+safe_icon_name() {
+  printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]]\+/-/g; s/^-//; s/-$//'
+}
+
+download_icon() {
+  curl -fsSL --max-time 10 -o "$2" "$1" 2>/dev/null &&
+    [[ -s $2 && $(file -b --mime-type "$2") == image/* ]]
+}
+
+fetch_site_icon() {
+  local site_url="$1" dest="$2"
+  local origin page icon_url
+  origin=$(sed -E 's|^(https?://[^/]+).*|\1|' <<<"$site_url")
+  page=$(curl -fsSL --max-time 5 "$site_url" 2>/dev/null | head -c 100000 | tr '\n' ' ')
+  icon_url=$(grep -oiE "<link[^>]*rel=[\"'][^\"']*apple-touch-icon[^\"']*[\"'][^>]*>" <<<"$page" |
+    grep -oiE "href=[\"'][^\"']+" | head -1 | sed -E "s/^href=[\"']//")
+  case $icon_url in
+    http://* | https://*) ;;
+    //*) icon_url="https:$icon_url" ;;
+    /*) icon_url="$origin$icon_url" ;;
+    ?*) icon_url="$origin/$icon_url" ;;
+  esac
+  { [[ -n $icon_url ]] && download_icon "$icon_url" "$dest"; } ||
+    download_icon "$origin/apple-touch-icon.png" "$dest" ||
+    download_icon "https://www.google.com/s2/favicons?domain=${site_url}&sz=256" "$dest"
+}
+
+# ── internal launchers (called from generated .desktop files) ──────────────
+
+launch_webapp() {
+  local url="$1" class="$2" browser exec_cmd profile_dir
+  # Chromium only honors --class when it starts a *new* process. If it reuses
+  # an already-running session (common case), --class is silently ignored and
+  # the window keeps the browser's default WM_CLASS, so DWM rules never match.
+  # Giving each webapp its own --user-data-dir forces a fresh process.
+  profile_dir="$HOME/.local/share/webapps/$class"
+  mkdir -p "$profile_dir"
+
+  browser=$(xdg-settings get default-web-browser 2>/dev/null)
+  case $browser in
+    google-chrome* | brave* | microsoft-edge* | opera* | vivaldi* | chromium*) ;;
+    *) browser="chromium.desktop" ;;
+  esac
+  exec_cmd=$(sed -n 's/^Exec=\([^ ]*\).*/\1/p' {~/.local,/usr}/share/applications/"$browser" 2>/dev/null | head -1)
+  [[ -z $exec_cmd ]] && exec_cmd="chromium"
+  exec "$exec_cmd" --app="$url" --class="$class" --user-data-dir="$profile_dir"
+}
+
+launch_tui() {
+  local class="$1"; shift
+  # Alacritty computes its own pixel size from columns/lines and issues a
+  # ConfigureRequest after mapping, which DWM honors for floating clients —
+  # this silently overrides any width/height set by a window rule. Passing
+  # explicit dimensions here makes Alacritty request a sane size itself
+  # instead of relying on the WM to force it after the fact.
+  exec alacritty --class "$class" -o window.dimensions.columns=80 -o window.dimensions.lines=25 -e "$@"
+}
+
+# ── create / remove flows (all input via rofi) ──────────────────────────────
+
+create_webapp() {
+  local name url icon_value icon_ref class style
+  name=$(rofi -dmenu -p "Web App Name" -l 0) || exit 0
+  [[ -z $name ]] && exit 0
+  url=$(rofi -dmenu -p "URL" -l 0) || exit 0
+  [[ -z $url ]] && exit 0
+  [[ ! $url =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]] && url="https://$url"
+
+  style=$(printf "tile\nfloat" | rofi -dmenu -p "Window Style")
+  [[ -z $style ]] && style="tile"
+
+  icon_value=$(safe_icon_name "$name")
+
+  if fetch_site_icon "$url" "$ICON_DIR/$icon_value.png"; then
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+  else
+    icon_ref=$(rofi -dmenu -p "Icon URL/name (auto-fetch failed, blank=default)" -l 0)
+    if [[ -n $icon_ref ]]; then
+      if [[ $icon_ref =~ ^https?:// ]]; then
+        download_icon "$icon_ref" "$ICON_DIR/$icon_value.png" || { notify "Web App failed" "Icon download failed"; exit 1; }
+        gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+      elif [[ -f $icon_ref ]]; then
+        local ext="${icon_ref##*.}"
+        [[ $ext == "$icon_ref" ]] && ext="png"
+        cp "$icon_ref" "$ICON_DIR/$icon_value.$ext"
+        gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+      else
+        icon_value="$icon_ref"
+      fi
+    else
+      icon_value="web-browser"
+    fi
+  fi
+
+  class="WebApp.$style-$icon_value"
+  cat > "$DESKTOP_DIR/$name.desktop" <<EOF
+[Desktop Entry]
+Version=1.0
+Name=$name
+Comment=$name
+Exec=app-manager --run-webapp "$url" "$class"
+Terminal=false
+Type=Application
+Icon=$icon_value
+StartupNotify=true
+EOF
+  chmod +x "$DESKTOP_DIR/$name.desktop"
+  update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
+  notify "Web App created" "$name"
+}
+
+remove_webapp() {
+  local apps=() name icon_value
+  while IFS= read -r -d '' f; do
+    grep -q '^Exec=app-manager --run-webapp' "$f" && apps+=("$(basename "${f%.desktop}")")
+  done < <(find "$DESKTOP_DIR" -maxdepth 1 -name '*.desktop' -print0 2>/dev/null)
+  (( ${#apps[@]} == 0 )) && { notify "No Web Apps found"; exit 0; }
+  name=$(printf '%s\n' "${apps[@]}" | sort | rofi -dmenu -p "Remove which Web App?")
+  [[ -z $name ]] && exit 0
+  icon_value=$(sed -n 's/^Icon=//p' "$DESKTOP_DIR/$name.desktop" | head -1)
+  rm -f "$DESKTOP_DIR/$name.desktop"
+  [[ -n $icon_value ]] && rm -f "$ICON_DIR/$icon_value".*
+  update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
+  notify "Web App removed" "$name"
+}
+
+create_tui() {
+  local name exec_cmd style icon_ref icon_value class
+  name=$(rofi -dmenu -p "TUI App Name" -l 0) || exit 0
+  [[ -z $name ]] && exit 0
+  exec_cmd=$(rofi -dmenu -p "Launch Command (e.g. lazydocker, htop)" -l 0) || exit 0
+  [[ -z $exec_cmd ]] && exit 0
+
+  # Expand a leading ~ to $HOME — .desktop Exec= lines are not run through a
+  # shell, so a literal "~" would never resolve and the launch silently fails.
+  exec_cmd="${exec_cmd/#\~/$HOME}"
+
+  # Warn (but don't block) if the target script isn't executable yet.
+  local first_word="${exec_cmd%% *}"
+  if [[ -f $first_word && ! -x $first_word ]]; then
+    notify "Warning" "$first_word is not executable — run: chmod +x $first_word"
+  fi
+
+  style=$(printf "float\ntile" | rofi -dmenu -p "Window Style")
+  [[ -z $style ]] && style="float"
+  icon_ref=$(rofi -dmenu -p "Icon URL/name (blank=default)" -l 0)
+
+  if [[ -n $icon_ref && $icon_ref =~ ^https?:// ]]; then
+    icon_value=$(safe_icon_name "$name")
+    download_icon "$icon_ref" "$ICON_DIR/$icon_value.png" || { notify "TUI failed" "Icon download failed"; exit 1; }
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+  elif [[ -n $icon_ref ]]; then
+    icon_value="$icon_ref"
+  else
+    icon_value="utilities-terminal"
+  fi
+
+  [[ $style == "float" ]] && class="TUI.float" || class="TUI.tile"
+
+  cat > "$DESKTOP_DIR/$name.desktop" <<EOF
+[Desktop Entry]
+Version=1.0
+Name=$name
+Comment=$name
+Exec=app-manager --run-tui "$class" $exec_cmd
+Terminal=false
+Type=Application
+Icon=$icon_value
+StartupNotify=true
+EOF
+  chmod +x "$DESKTOP_DIR/$name.desktop"
+  update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
+  notify "TUI App created" "$name"
+}
+
+remove_tui() {
+  local apps=() name icon_value
+  while IFS= read -r -d '' f; do
+    grep -q '^Exec=app-manager --run-tui' "$f" && apps+=("$(basename "${f%.desktop}")")
+  done < <(find "$DESKTOP_DIR" -maxdepth 1 -name '*.desktop' -print0 2>/dev/null)
+  (( ${#apps[@]} == 0 )) && { notify "No TUI Apps found"; exit 0; }
+  name=$(printf '%s\n' "${apps[@]}" | sort | rofi -dmenu -p "Remove which TUI App?")
+  [[ -z $name ]] && exit 0
+  icon_value=$(sed -n 's/^Icon=//p' "$DESKTOP_DIR/$name.desktop" | head -1)
+  rm -f "$DESKTOP_DIR/$name.desktop"
+  [[ -n $icon_value && $icon_value != "utilities-terminal" ]] && rm -f "$ICON_DIR/$icon_value".*
+  update-desktop-database "$DESKTOP_DIR" &>/dev/null || true
+  notify "TUI App removed" "$name"
+}
+
+main_menu() {
+  local choice
+  choice=$(printf "Create Web App\nRemove Web App\nCreate TUI App\nRemove TUI App" | rofi -dmenu -p "App Manager" -i)
+  case "$choice" in
+    "Create Web App") create_webapp ;;
+    "Remove Web App") remove_webapp ;;
+    "Create TUI App") create_tui ;;
+    "Remove TUI App") remove_tui ;;
+    *) exit 0 ;;
+  esac
+}
+
+# ── entry point ───────────────────────────────────────────────────────────
+
+case "${1:-}" in
+  --run-webapp) launch_webapp "$2" "$3" ;;
+  --run-tui) shift; class="$1"; shift; launch_tui "$class" "$@" ;;
+  *) main_menu ;;
+esac

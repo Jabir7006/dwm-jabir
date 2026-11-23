@@ -1,0 +1,8 @@
+#!/bin/sh
+# Rofi clipboard picker — clipmenu front-end.
+# Uses a custom inner launcher (clipboard-launcher) that injects a
+# "Clear history" row and points rofi at the themed clipboard.rasi.
+# clipmenu feeds the clip list to that launcher and passes `-l $CM_HISTLENGTH`.
+export CM_LAUNCHER="$HOME/.config/rofi/clipboard-launcher"
+export CM_HISTLENGTH=10   # rows shown in the menu
+exec clipmenu

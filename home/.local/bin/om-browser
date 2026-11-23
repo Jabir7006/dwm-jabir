@@ -1,0 +1,45 @@
+#!/bin/bash
+# ~/.local/bin/om-browser
+
+# Check for dependencies
+if ! command -v fzf &> /dev/null; then echo "Error: fzf is not installed."; exit 1; fi
+
+MODE="$1"
+
+if [[ "$MODE" == "aur" ]]; then
+    # AUR Mode (uses yay or paru)
+    if command -v yay &> /dev/null; then
+        HELPER="yay"
+    elif command -v paru &> /dev/null; then
+        HELPER="paru"
+    else
+        echo "Error: No AUR helper (yay/paru) found."
+        read -p "Press Enter to exit"
+        exit 1
+    fi
+    
+    # Live Search Mode for AUR: Starts empty, searches dynamically as you type
+    < /dev/null fzf --multi \
+        --prompt="AUR Search > " \
+        --header="Start typing to search AUR | Tab: Multi-select | Alt-p: Toggle Preview | Enter: Install" \
+        --bind "change:reload($HELPER -Ssq --aur {q} || true)" \
+        --preview "$HELPER -Si {1}" \
+        --bind "alt-p:toggle-preview" \
+        --bind "enter:execute($HELPER -S {+})+abort"
+
+elif [[ "$MODE" == "remove" ]]; then
+    # Remove Mode: Lists all installed packages
+    pacman -Qq | fzf --multi --preview "pacman -Qi {1}" \
+        --prompt="Remove > " \
+        --header="Tab: Multi-select | Alt-p: Toggle Preview | Enter: Remove" \
+        --bind "alt-p:toggle-preview" \
+        --bind "enter:execute(sudo pacman -Rns {+})+abort"
+        
+else
+    # Default Pacman Mode
+    pacman -Slq | fzf --multi --preview "pacman -Si {1}" \
+        --prompt="Arch > " \
+        --header="Tab: Multi-select | Alt-p: Toggle Preview | Enter: Install" \
+        --bind "alt-p:toggle-preview" \
+        --bind "enter:execute(sudo pacman -S {+})+abort"
+fi

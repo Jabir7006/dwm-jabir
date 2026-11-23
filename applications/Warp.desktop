@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=Warp
+Comment=Warp
+Exec=app-manager --run-tui "TUI.float" /home/jabir/custom-scripts/warp_toggle.py
+Terminal=false
+Type=Application
+Icon=warp
+StartupNotify=true

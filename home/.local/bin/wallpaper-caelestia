@@ -1,0 +1,737 @@
+#!/usr/bin/env python3
+# wallpaper-caelestia — Caelestia-style bottom dock wallpaper picker.
+#
+# On-demand GTK4 app for X11/dwm: nothing runs while closed, exits on
+# apply or cancel. This is the 3rd picker, fully separate from the other two:
+#   rofi grid (wallpaper-picker.sh)  +  skwd filmstrip (wallpaper-carousel)
+# This one mimics caelestia-dots/shell's `>wallpaper` launcher: a bottom-
+# centered floating pill with 5 thumbnails, the selected one slightly lifted
+# and highlighted, wallpaper visible behind. No shear/parallelogram.
+#
+#   ←/→ or h/l/j/k   move        Enter/Space  apply      Esc/q  cancel
+#   Home/End         first/last  wheel/click  browse
+#   Tab              back to grid picker      double-click applies
+#   type to filter   (like Caelestia's >wallpaper search)
+#
+# Caches reused from the other pickers:
+#   ~/.cache/wallpaper-picker/thumbs   320x180
+# Only thumbs are needed — no big preview, so this picker is even lighter.
+#
+# Colors from ~/.config/rofi/active-colors.rasi (same as the other two).
+# Apply goes through ~/.local/bin/wallpaper-apply (single apply path).
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import warnings
+from collections import deque
+
+os.environ.setdefault("GTK_A11Y", "none")
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("GdkPixbuf", "2.0")
+gi.require_version("Pango", "1.0")
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango  # noqa: E402
+
+try:
+    gi.require_version("GdkX11", "4.0")
+    from gi.repository import GdkX11  # noqa: E402
+except (ValueError, ImportError):
+    GdkX11 = None
+
+GLib.set_prgname("wallpaper-caelestia")
+
+APP_ID = "org.jabir.wallpaper-caelestia"
+BAR_H = 31
+WALL_DIR = os.path.expanduser(os.environ.get("WALLPAPER_DIR") or "~/Pictures/backgrounds")
+CACHE_DIR = os.path.join(
+    os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "wallpaper-picker"
+)
+THUMB_DIR = os.path.join(CACHE_DIR, "thumbs")
+APPLY = os.path.expanduser("~/.local/bin/wallpaper-apply")
+PICKER = os.path.expanduser("~/.local/bin/wallpaper-picker.sh")
+COLORS_RASI = os.path.expanduser("~/.config/rofi/active-colors.rasi")
+EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+THUMB_SIZE = "320x180"
+PREVIEW_JOBS = 2
+VISIBLE = 5  # like Caelestia's launcher — odd, centered
+
+# Critically damped spring, same model as the filmstrip (Standard 250 ms).
+SPRING_MS = 250.0
+_OMEGA = 6.64 / (SPRING_MS / 1000.0)
+SPRING_K = _OMEGA * _OMEGA
+SPRING_C = 2.0 * _OMEGA
+SPRING_HOP = 1.0 / 240.0
+
+
+def spring(x, v, target, dt):
+    remaining = min(dt, 0.05)
+    while remaining > 0.0:
+        step = min(remaining, SPRING_HOP)
+        v += (-SPRING_K * (x - target) - SPRING_C * v) * step
+        x += v * step
+        remaining -= step
+    return x, v
+
+
+def theme_colors():
+    colors = {
+        "bg": "#1A120E",
+        "fg": "#F1DFD8",
+        "bg-selected": "#52443D",
+        "fg-alt": "#A08D85",
+        "border-color": "#D47343",
+    }
+    try:
+        with open(COLORS_RASI, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = re.match(r"\s*([a-z][a-z-]*)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;", line)
+                if m:
+                    colors[m.group(1)] = m.group(2)
+    except OSError:
+        pass
+    return colors
+
+
+def hex_to_rgb(hexcol):
+    h = hexcol.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    h = h[:6]
+    try:
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return 26, 18, 14
+
+
+def build_cache(src, dst, size):
+    try:
+        if os.path.exists(dst) and os.path.getmtime(dst) >= os.path.getmtime(src):
+            return True
+    except OSError:
+        return False
+    tool = shutil.which("magick") or shutil.which("convert")
+    if tool is None:
+        return False
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    tmp = "%s.%d.part" % (dst, os.getpid())
+    try:
+        ok = (
+            subprocess.run(
+                [tool, src, "-thumbnail", size + "^", "-gravity", "center", "-extent", size, "-quality", "88", tmp],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60,
+            ).returncode == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        ok = False
+    if ok:
+        os.replace(tmp, dst)
+    else:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    return ok
+
+
+def cache_path(img):
+    stem = os.path.splitext(os.path.basename(img))[0]
+    return os.path.join(THUMB_DIR, stem + ".jpg")
+
+
+def load_pixbuf(path):
+    try:
+        return GdkPixbuf.Pixbuf.new_from_file(path)
+    except GLib.Error:
+        return None
+
+
+def pixbuf_texture(pb):
+    builder = Gdk.MemoryTextureBuilder.new()
+    builder.set_bytes(GLib.Bytes.new(pb.get_pixels()))
+    builder.set_width(pb.get_width())
+    builder.set_height(pb.get_height())
+    builder.set_stride(pb.get_rowstride())
+    builder.set_format(Gdk.MemoryFormat.R8G8B8A8 if pb.get_has_alpha() else Gdk.MemoryFormat.R8G8B8)
+    return builder.build()
+
+
+def pretty_name(filename):
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    stem = re.sub(r"^\d{3,5}x\d{3,5}[_-]", "", stem)
+    stem = stem.replace("_", " ").strip()
+    return stem[:32] + "…" if len(stem) > 32 else stem
+
+
+def find_wallpapers():
+    try:
+        entries = sorted(os.listdir(WALL_DIR))
+    except OSError:
+        return []
+    return [os.path.join(WALL_DIR, e) for e in entries if e.lower().endswith(EXTS) and os.path.isfile(os.path.join(WALL_DIR, e))]
+
+
+class Caelestia(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
+        self.walls = []
+        self.filtered = []
+        self.idx = 0
+        self.query = ""
+        self.thumbs = {}
+        self.textures = {}
+        self.win = None
+        self.slots = []  # list of (frame, picture, label, veil)
+        self.slot_idx = []  # wallpaper index each slot shows, or -1 for empty
+        self.cur_scale = []
+        self.vel_scale = []
+        self.tgt_scale = []
+        self.applied_scale = []
+        self.tick_id = 0
+        self.last_frame = 0
+        self.backdrop = None
+        self.count_label = None
+        self.search_entry = None
+        self.dock = None
+
+    # ── lifecycle ────────────────────────────────────────────────────────
+    def do_activate(self):
+        if self.win is not None:
+            self.win.present()
+            return
+        self.walls = find_wallpapers()
+        if not self.walls:
+            self._bail("No wallpapers in %s" % WALL_DIR)
+            return
+        self.filtered = list(self.walls)
+        self.win = Gtk.ApplicationWindow(application=self, title="Wallpaper")
+        self.win.set_decorated(False)
+        wx, wy, ww, wh = self._work_area()
+        if ww and self._can_place():
+            self.win.fullscreen()
+        elif ww:
+            self.win.set_default_size(ww, wh - BAR_H)
+        self._apply_css()
+        self._build_ui()
+        self.win.connect("map", self._on_map)
+        self.win.connect("close-request", lambda *_: self.quit())
+        self.win.set_visible(True)
+
+    def _bail(self, message):
+        win = Gtk.ApplicationWindow(application=self, title="Wallpaper")
+        win.set_default_size(460, 120)
+        win.set_child(Gtk.Label(label=message))
+        win.present()
+        GLib.timeout_add(2500, lambda: self.quit() or False)
+
+    def _apply_css(self):
+        c = theme_colors()
+        r, g, b = hex_to_rgb(c["bg"])
+        # Dock: dark pill like Caelestia — uses theme bg with transparency,
+        # so it follows dynamic themes instead of being hard-coded black.
+        css = """
+        window { background-color: transparent; }
+        .backdrop-dim { background-color: rgba(0, 0, 0, 0.18); }
+        .dock {
+            background-color: rgba(%d, %d, %d, 0.92);
+            border-radius: 20px;
+            padding: 14px 14px 10px 14px;
+        }
+        .thumb-frame {
+            border-radius: 12px;
+            background-color: transparent;
+        }
+        .thumb-frame-selected {
+            border: 2px solid %s;
+            border-radius: 12px;
+        }
+        .thumb-veil { background-color: rgba(0, 0, 0, 0.42); border-radius: 12px; }
+        .thumb-label { color: %s; font-family: sans-serif; font-size: 9px; }
+        .thumb-label-selected { color: %s; font-family: sans-serif; font-size: 9px; font-weight: 600; }
+        .search-box {
+            background-color: rgba(255,255,255,0.08);
+            border-radius: 10px;
+            padding: 6px 10px;
+        }
+        .search-entry { color: %s; font-family: sans-serif; font-size: 11px; background: transparent; border: none; }
+        .search-entry placeholder { color: %s; }
+        .hint { color: %s; font-family: sans-serif; font-size: 10px; }
+        .corner { background-image: none; background-color: %s; color: %s; border: none; box-shadow: none; border-radius: 8px; padding: 6px 12px; font-family: sans-serif; font-size: 11px; }
+        .corner:hover { background-image: none; background-color: %s; color: %s; }
+        """ % (r, g, b, c["border-color"], c["fg-alt"], c["fg"], c["fg"], c["fg-alt"], c["fg-alt"], c["bg-selected"], c["fg"], c["border-color"], c["bg"])
+        # GTK4 CssProvider is forgiving about unknown props — search-entry placeholder
+        # styling falls back gracefully.
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css.encode())
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    # ── UI ───────────────────────────────────────────────────────────────
+    def _build_ui(self):
+        self.backdrop = Gtk.Picture()
+        self.backdrop.set_content_fit(Gtk.ContentFit.COVER)
+        self.backdrop.set_can_shrink(True)
+
+        dim = Gtk.Box()
+        dim.add_css_class("backdrop-dim")
+        dim.set_hexpand(True)
+        dim.set_vexpand(True)
+
+        # Top bar: just the corner button, wallpaper stays fully visible
+        self.grid_btn = Gtk.Button(label="⊞ Grid")
+        self.grid_btn.add_css_class("corner")
+        self.grid_btn.set_halign(Gtk.Align.END)
+        self.grid_btn.set_valign(Gtk.Align.START)
+        self.grid_btn.set_tooltip_text("Back to grid (Tab)")
+        self.grid_btn.connect("clicked", lambda *_: self.switch_to_grid())
+        toprow = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        toprow.set_margin_top(14)
+        toprow.set_margin_end(16)
+        toprow.set_margin_start(16)
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        toprow.append(spacer)
+        toprow.append(self.grid_btn)
+
+        # Dock — bottom centered pill, like Caelestia's launcher
+        self.dock = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.dock.add_css_class("dock")
+        self.dock.set_halign(Gtk.Align.CENTER)
+        self.dock.set_valign(Gtk.Align.END)
+        self.dock.set_margin_bottom(18)
+
+        # Thumbnails row — exactly VISIBLE slots, centered
+        thumb_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        thumb_row.set_halign(Gtk.Align.CENTER)
+        thumb_row.set_valign(Gtk.Align.CENTER)
+
+        for _ in range(VISIBLE):
+            frame = Gtk.Overlay()
+            frame.set_overflow(Gtk.Overflow.HIDDEN)
+            frame.add_css_class("thumb-frame")
+            # Fixed size for each thumb; selected will be scaled via spring
+            pic = Gtk.Picture()
+            pic.set_content_fit(Gtk.ContentFit.COVER)
+            pic.set_can_shrink(True)
+            frame.set_child(pic)
+            veil = Gtk.Box()
+            veil.add_css_class("thumb-veil")
+            veil.set_hexpand(True)
+            veil.set_vexpand(True)
+            frame.add_overlay(veil)
+            # Label under thumb is outside the Overlay, in a vertical box
+            lbl = Gtk.Label(label="")
+            lbl.add_css_class("thumb-label")
+            lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            lbl.set_max_width_chars(18)
+            lbl.set_halign(Gtk.Align.CENTER)
+            cell = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            cell.set_halign(Gtk.Align.CENTER)
+            cell.append(frame)
+            cell.append(lbl)
+            click = Gtk.GestureClick()
+            # capture slot index via default arg
+            slot_pos = len(self.slots)
+            click.connect("pressed", self._on_slot_pressed, slot_pos)
+            cell.add_controller(click)
+            thumb_row.append(cell)
+            self.slots.append((frame, pic, lbl, veil))
+            self.slot_idx.append(-1)
+            self.cur_scale.append(1.0)
+            self.vel_scale.append(0.0)
+            self.tgt_scale.append(1.0)
+            self.applied_scale.append(-1.0)
+
+        # Search / filter row — like Caelestia's >wallpaper field
+        search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        search_box.add_css_class("search-box")
+        search_icon = Gtk.Label(label="⌕")
+        search_icon.add_css_class("hint")
+        self.search_entry = Gtk.Entry()
+        self.search_entry.add_css_class("search-entry")
+        self.search_entry.set_placeholder_text(">wallpaper — type to filter, Enter to apply")
+        self.search_entry.set_hexpand(True)
+        self.search_entry.connect("changed", self._on_filter_changed)
+        self.search_entry.connect("activate", lambda *_: self.apply())
+        # Ctrl+U / Esc clears filter
+        key_ctl = Gtk.EventControllerKey()
+        key_ctl.connect("key-pressed", self._on_search_key)
+        self.search_entry.add_controller(key_ctl)
+        search_box.append(search_icon)
+        search_box.append(self.search_entry)
+
+        self.count_label = Gtk.Label(label="")
+        self.count_label.add_css_class("hint")
+        self.count_label.set_halign(Gtk.Align.CENTER)
+
+        self.dock.append(thumb_row)
+        self.dock.append(search_box)
+        self.dock.append(self.count_label)
+
+        hint = Gtk.Label(label="←/→ browse  •  Enter apply  •  click select, double-click apply  •  Tab grid  •  Esc cancel")
+        hint.add_css_class("hint")
+        hint.set_halign(Gtk.Align.CENTER)
+        hint.set_margin_bottom(6)
+
+        # Content overlay: backdrop + dim + top row + dock centered at bottom
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        content.set_hexpand(True)
+        content.set_vexpand(True)
+        mid_spacer = Gtk.Box()
+        mid_spacer.set_vexpand(True)
+        content.append(toprow)
+        content.append(mid_spacer)
+        # Dock + hint wrapped so hint sits just below dock, both centered
+        bottom_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        bottom_col.set_halign(Gtk.Align.CENTER)
+        bottom_col.append(self.dock)
+        bottom_col.append(hint)
+        bottom_col.set_margin_bottom(10)
+        content.append(bottom_col)
+
+        overlay = Gtk.Overlay()
+        overlay.set_child(self.backdrop)
+        overlay.add_overlay(dim)
+        overlay.add_overlay(content)
+        self.win.set_child(overlay)
+
+        # Global keys
+        keys = Gtk.EventControllerKey()
+        keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self._on_key)
+        self.win.add_controller(keys)
+        scroll = Gtk.EventControllerScroll()
+        scroll.set_flags(Gtk.EventControllerScrollFlags.VERTICAL | Gtk.EventControllerScrollFlags.HORIZONTAL)
+        scroll.connect("scroll", self._on_scroll)
+        self.win.add_controller(scroll)
+
+        self._refresh()
+
+    def _on_map(self, *_):
+        self._fit_work_area()
+
+    def _work_area(self):
+        display = Gdk.Display.get_default()
+        if display is not None:
+            mons = display.get_monitors()
+            if mons.get_n_items():
+                geo = mons.get_item(0).get_geometry()
+                if geo.width > 1 and geo.height > BAR_H:
+                    return 0, BAR_H, geo.width, geo.height - BAR_H
+        return 0, 0, 0, 0
+
+    @staticmethod
+    def _can_place():
+        return GdkX11 is not None and shutil.which("xdotool") is not None
+
+    def _fit_work_area(self):
+        surface = self.win.get_surface()
+        if surface is None or not self._can_place():
+            return
+        wx, wy, ww, wh = self._work_area()
+        if not ww:
+            return
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                xid = GdkX11.X11Surface.get_xid(surface)
+            subprocess.Popen(
+                ["xdotool", "windowsize", str(xid), str(ww), str(wh + 1),
+                 "windowmove", str(xid), str(wx), str(wy - 1)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except (GLib.Error, OSError):
+            pass
+
+    # ── filtering ──────────────────────────────────────────────────────
+    def _on_filter_changed(self, entry):
+        q = entry.get_text().strip().lower()
+        # Strip leading >wallpaper / > like Caelestia for convenience
+        if q.startswith(">"):
+            q = q[1:].strip()
+            if q.startswith("wallpaper"):
+                q = q[9:].strip()
+        self.query = q
+        if not q:
+            self.filtered = list(self.walls)
+        else:
+            self.filtered = [p for p in self.walls if q in os.path.basename(p).lower() or q in pretty_name(p).lower()]
+        self.idx = 0
+        self._refresh()
+
+    def _on_search_key(self, _c, keyval, _code, _state):
+        if keyval == Gdk.KEY_Escape:
+            if self.query:
+                self.search_entry.set_text("")
+                return True
+        return False
+
+    # ── images ─────────────────────────────────────────────────────────
+    def _thumb(self, path):
+        if path in self.thumbs:
+            return self.thumbs[path]
+        dst = cache_path(path)
+        pb = None
+        if build_cache(path, dst, THUMB_SIZE) or os.path.exists(dst):
+            pb = load_pixbuf(dst)
+        self.thumbs[path] = pb
+        return pb
+
+    def _set_picture(self, picture, pb, key):
+        if pb is None:
+            return
+        tex = self.textures.get(key)
+        if tex is None:
+            tex = pixbuf_texture(pb)
+            self.textures[key] = tex
+        picture.set_paintable(tex)
+
+    # ── rendering ──────────────────────────────────────────────────────
+    def _refresh(self):
+        n = len(self.filtered)
+        if n == 0:
+            self.count_label.set_text("No match — Esc to clear filter")
+            # Clear slots
+            for s, (frame, pic, lbl, veil) in enumerate(self.slots):
+                self.slot_idx[s] = -1
+                veil.set_opacity(0.0)
+                lbl.set_text("")
+                # keep picture as is, just dim
+            # backdrop stays as last
+            return
+
+        self.idx = max(0, min(self.idx, n - 1))
+        # Backdrop = selected wallpaper full-screen
+        sel_path = self.filtered[self.idx]
+        pb = self._thumb(sel_path)
+        if pb is not None:
+            self._set_picture(self.backdrop, pb, sel_path)
+
+        # Fill VISIBLE slots centered on idx. Slot 2 is the center (for VISIBLE=5).
+        center = VISIBLE // 2
+        for s in range(VISIBLE):
+            wall_i = self.idx + (s - center)
+            frame, pic, lbl, veil = self.slots[s]
+            if 0 <= wall_i < n:
+                path = self.filtered[wall_i]
+                self.slot_idx[s] = wall_i
+                thumb_pb = self._thumb(path)
+                if thumb_pb is not None:
+                    self._set_picture(pic, thumb_pb, "t:" + path)
+                lbl.set_text(pretty_name(path))
+                is_sel = (wall_i == self.idx)
+                self.tgt_scale[s] = 1.08 if is_sel else 1.0
+                # Selection styling
+                if is_sel:
+                    frame.add_css_class("thumb-frame-selected")
+                    frame.remove_css_class("thumb-frame")
+                    lbl.add_css_class("thumb-label-selected")
+                    lbl.remove_css_class("thumb-label")
+                else:
+                    frame.add_css_class("thumb-frame")
+                    frame.remove_css_class("thumb-frame-selected")
+                    lbl.add_css_class("thumb-label")
+                    lbl.remove_css_class("thumb-label-selected")
+            else:
+                self.slot_idx[s] = -1
+                self.tgt_scale[s] = 0.0
+                lbl.set_text("")
+                # leave picture, veil will hide it
+
+        # Per-slot size: selected slightly larger + lifted via margin
+        # Use fixed base sizes, scale via size_request spring
+        self.count_label.set_text("%d / %d%s" % (self.idx + 1, n, ("  •  “%s”" % self.query) if self.query else ""))
+
+        self._push_visuals_static()
+        self._push_scales()
+        self._start_anim()
+
+    def _push_visuals_static(self):
+        for s, (_frame, _pic, _lbl, veil) in enumerate(self.slots):
+            is_empty = self.slot_idx[s] == -1
+            is_sel = self.slot_idx[s] == self.idx and not is_empty
+            # veil: selected = transparent, others dimmed, empty = fully dimmed/hidden
+            target_opacity = 0.0 if is_sel else (1.0 if is_empty else 0.42)
+            # For empty slots, hide the frame by making veil opaque and label empty
+            if is_empty:
+                veil.set_opacity(1.0)
+            else:
+                veil.set_opacity(0.0 if is_sel else 0.42)
+            # Lift selected card a few px like Caelestia
+            _frame, _pic, _lbl, _veil = self.slots[s]
+            # Use margin to lift — cheapest, no transform needed
+            if is_sel:
+                _frame.set_margin_bottom(8)
+                _frame.set_margin_top(0)
+            else:
+                _frame.set_margin_bottom(0)
+                _frame.set_margin_top(8)
+
+    def _push_scales(self):
+        # Animate size via width/height request. Base thumb is 158x90 (16:9).
+        # Selected grows to ~172x97.
+        base_w, base_h = 158, 90
+        sel_w, sel_h = 174, 98
+        for s, (frame, _pic, _lbl, veil) in enumerate(self.slots):
+            if self.slot_idx[s] == -1:
+                # collapse empty slots
+                frame.set_size_request(0, 0)
+                frame.set_opacity(0.0)
+                continue
+            frame.set_opacity(1.0)
+            # interpolate size by cur_scale (1.0 -> 1.08)
+            t = max(0.0, min(1.0, (self.cur_scale[s] - 1.0) / 0.08)) if self.tgt_scale[s] > 1.0 else 0.0
+            # For non-selected, cur_scale stays 1.0, so t=0
+            # For selected, cur_scale animates 1.0 -> 1.08
+            if self.slot_idx[s] == self.idx:
+                w = int(base_w + (sel_w - base_w) * t)
+                h = int(base_h + (sel_h - base_h) * t)
+            else:
+                w, h = base_w, base_h
+                # unselected also shrinks slightly if scale <1 (empty case handled above)
+            frame.set_size_request(w, h)
+
+    def _start_anim(self):
+        # Push current scales now so first frame is correct even before ticks.
+        self._push_scales()
+        need = False
+        for s in range(VISIBLE):
+            if abs(self.cur_scale[s] - self.tgt_scale[s]) >= 0.001:
+                need = True
+                break
+        if need and not self.tick_id and self.win:
+            self.last_frame = 0
+            self.tick_id = self.win.add_tick_callback(self._animate)
+        elif not need:
+            for s in range(VISIBLE):
+                self.cur_scale[s] = self.tgt_scale[s]
+                self.vel_scale[s] = 0.0
+
+    def _animate(self, _widget, clock):
+        now = clock.get_frame_time()
+        dt = min(0.05, (now - self.last_frame) / 1e6) if self.last_frame else 1 / 60
+        self.last_frame = now
+        settled = True
+        for s in range(VISIBLE):
+            x, v = spring(self.cur_scale[s], self.vel_scale[s], self.tgt_scale[s], dt)
+            if abs(self.tgt_scale[s] - x) < 0.005 and abs(v) < 2.0:
+                x, v = self.tgt_scale[s], 0.0
+            else:
+                settled = False
+            self.cur_scale[s], self.vel_scale[s] = x, v
+        self._push_scales()
+        if settled:
+            self.tick_id = 0
+            return False
+        return True
+
+    # ── input ──────────────────────────────────────────────────────────
+    def move(self, delta):
+        if not self.filtered:
+            return
+        self.idx = max(0, min(len(self.filtered) - 1, self.idx + delta))
+        self._refresh()
+
+    def _on_key(self, _c, keyval, _code, _state):
+        # When search entry has focus, let it handle typing; still handle nav
+        focused = self.win.get_focus()
+        is_typing = focused == self.search_entry and keyval not in (
+            Gdk.KEY_Escape, Gdk.KEY_Return, Gdk.KEY_KP_Enter,
+            Gdk.KEY_Tab, Gdk.KEY_Up, Gdk.KEY_Down, Gdk.KEY_Left, Gdk.KEY_Right,
+            Gdk.KEY_Home, Gdk.KEY_End, Gdk.KEY_Page_Up, Gdk.KEY_Page_Down,
+        )
+        if is_typing:
+            return False
+        if keyval in (Gdk.KEY_Escape, Gdk.KEY_q):
+            # If filter active, Esc first clears filter (handled in entry), otherwise quit
+            if self.query:
+                self.search_entry.set_text("")
+                return True
+            self.quit()
+        elif keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space):
+            self.apply()
+        elif keyval in (Gdk.KEY_Left, Gdk.KEY_h, Gdk.KEY_Up, Gdk.KEY_k):
+            self.move(-1)
+        elif keyval in (Gdk.KEY_Right, Gdk.KEY_l, Gdk.KEY_Down, Gdk.KEY_j):
+            self.move(1)
+        elif keyval == Gdk.KEY_Home:
+            self.idx = 0
+            self._refresh()
+        elif keyval == Gdk.KEY_End:
+            self.idx = len(self.filtered) - 1
+            self._refresh()
+        elif keyval == Gdk.KEY_Page_Up:
+            self.move(-5)
+        elif keyval == Gdk.KEY_Page_Down:
+            self.move(5)
+        elif keyval == Gdk.KEY_Tab:
+            self.switch_to_grid()
+        elif keyval == Gdk.KEY_slash and not self.query:
+            self.search_entry.grab_focus()
+            return True
+        else:
+            # Any printable char focuses search (like Caelestia launcher)
+            name = Gdk.keyval_name(keyval)
+            if name and len(name) == 1 and name.isprintable():
+                self.search_entry.grab_focus()
+                # Let the entry receive this keystroke
+                return False
+            return False
+        return True
+
+    def _on_scroll(self, _c, dx, dy):
+        if dy:
+            self.move(-1 if dy < 0 else 1)
+        elif dx:
+            self.move(-1 if dx < 0 else 1)
+        return True
+
+    def _on_slot_pressed(self, gesture, n_press, _x, _y, slot_pos):
+        if gesture.get_current_button() != 1:
+            return
+        wall_i = self.slot_idx[slot_pos]
+        if wall_i == -1:
+            return
+        if wall_i == self.idx and n_press >= 2:
+            self.apply()
+            return
+        self.idx = wall_i
+        self._refresh()
+
+    def switch_to_grid(self):
+        if os.access(PICKER, os.X_OK):
+            try:
+                subprocess.Popen([PICKER], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError:
+                pass
+        self.quit()
+
+    def apply(self):
+        if not self.filtered:
+            return
+        path = self.filtered[self.idx]
+        if os.access(APPLY, os.X_OK):
+            try:
+                subprocess.Popen([APPLY, path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError:
+                pass
+        else:
+            try:
+                subprocess.Popen(["feh", "--bg-fill", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError:
+                pass
+        self.quit()
+
+
+def main():
+    app = Caelestia()
+    return app.run([])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

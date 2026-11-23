@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=DevDocs
+Comment=DevDocs
+Exec=app-manager --run-webapp "https://devdocs.io/" "WebApp.float-devdocs"
+Terminal=false
+Type=Application
+Icon=devdocs
+StartupNotify=true

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=WayClick
+GenericName=Keyboard Sound
+Comment=Toggle mechanical keyboard click sounds (on/off)
+Exec=/home/jabir/.local/bin/wayclick toggle
+Icon=input-keyboard
+Terminal=false
+Categories=Utility;
+Keywords=keyboard;sound;click;mechanical;wayclick;
+StartupNotify=false

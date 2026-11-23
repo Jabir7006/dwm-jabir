@@ -1,0 +1,68 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║           DWM Window Rules Configuration  ·  window-rules.toml      ║
+# ╠══════════════════════════════════════════════════════════════════════╣
+# ║  LIVE RELOAD — save this file and changes apply instantly!           ║
+# ║  Manual reload:  kill -USR1 $(pidof dwm)                             ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+#
+# One rule per line.  ALL matching rules are applied in order.
+#
+# Find window properties:  xprop | grep -E "WM_CLASS|WM_NAME"
+#   WM_CLASS(STRING) = "<instance>", "<class>"    WM_NAME(STRING) = "<title>"
+#
+# Fields (omit any field to match anything / use default):
+#   class       WM_CLASS second value      instance  WM_CLASS first value
+#   title       WM_NAME                    monitor   monitor number (-1 = any)
+#   tags        tag number 1–9  (0 or omit = follow current tag)
+#   isfloating  1=float  0=tile             isterminal  1=terminal (swallowing)
+#   noswallow   1=never swallow this window
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+rules = [
+  # ── terminals (isterminal=1 enables window swallowing) ───────────────────
+  { class="St",             isterminal=1 },
+  { class="kitty",          isterminal=1 },
+  { class="Alacritty",      isterminal=1 },
+  { class="ghostty",        isterminal=1 },
+  { class="warp-terminal",  isterminal=1 },
+  { class="Terminator",     isterminal=1 },
+
+  # ── TUI float ─────────────────────────────────────────────────────────────
+  # btop launched as: alacritty --class btop,btop -e btop
+  # (SUPER+s in hotkeys.toml); class is assigned at launch, btop itself has none
+  { class="btop",           isfloating=1 },
+
+  # ── no-swallow ────────────────────────────────────────────────────────────
+  { title="Event Tester",   noswallow=1  },
+
+  # ── floating ─────────────────────────────────────────────────────────────
+  # { class="Gimp",           isfloating=1 },
+    { class="pavucontrol", isfloating=1, width=620, height=500 },
+    { class="PortProton", isfloating=1 },
+    { class="wine",               isfloating=1 },
+    { class="steam_app_default",  isfloating=1 },
+    { class="mpv", isfloating=1 },
+    { class="vlc", isfloating=1, width=1280, height=720, iscentered=1 },
+    { class="Org.localsend.localsend_app", isfloating=1, width=900, height=700 },
+    { class="hydra", isfloating=1},
+   # { title="foot", isfloating=1, width=900, height=700 },
+    { class="Nsxiv", isfloating=1 },
+    { class="YadSlider", isfloating=1 },
+    # wallpaper pickers: float over the desktop; the apps size themselves to the
+    # work area below polybar so the bar stays visible while a picker is open
+    { class="wallpaper-carousel", isfloating=1 },
+    { class="wallpaper-caelestia", isfloating=1 },
+    { class="TUI.float", isfloating=1, width=900, height=700, iscentered=1 },
+    { class="TUI.tile",  isfloating=0 },
+    { class="WebApp.float", isfloating=1, width=900, height=500, iscentered=1 },
+    
+    # YouTube PiP Rules
+    { title="Picture-in-Picture", isfloating=1 }, # Firefox
+    { title="Picture in picture", isfloating=1 }, # Chromium browsers (Chrome, Brave, etc.)    
+
+  # ── assign to tag ────────────────────────────────────────────────────────
+  # { class="firefox",        tags=2 },
+  # { class="discord",        tags=7 },
+  # { class="Steam",          tags=8, monitor=1 },
+]

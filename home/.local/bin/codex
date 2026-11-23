@@ -1,0 +1,6 @@
+#!/bin/sh
+# Codex shim: some GUI clients (e.g. T3 Code) whitelist shell env vars and
+# drop AGENT_ROUTER_TOKEN, which ~/.codex/config.toml needs for AgentRouter.
+# Token lives in ~/.config/dwm-titus/secrets.env (chmod 600, never in git).
+[ -f "$HOME/.config/dwm-titus/secrets.env" ] && . "$HOME/.config/dwm-titus/secrets.env"
+exec /usr/bin/codex "$@"

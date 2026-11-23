@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=Cleanup
+Comment=Cleanup
+Exec=app-manager --run-tui "TUI.float" /home/jabir/custom-scripts/cleanup.sh
+Terminal=false
+Type=Application
+Icon=utilities-terminal
+StartupNotify=true

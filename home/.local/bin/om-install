@@ -1,0 +1,25 @@
+#!/bin/bash
+# ~/.local/bin/om-install
+
+# Define your terminal emulator here (kitty, alacritty, foot, etc.)
+TERM="kitty" 
+
+# Menu options
+OPT_PAC="📦 Package (Arch)"
+OPT_AUR="🦄 Package (AUR)"
+OPT_REM="🗑️ Remove Package"
+
+# Open Rofi (or replace 'rofi -dmenu' with 'wofi --dmenu')
+CHOICE=$(echo -e "$OPT_PAC\n$OPT_AUR\n$OPT_REM" | rofi -dmenu -p "Manage..." -i)
+
+case "$CHOICE" in
+    "$OPT_PAC")
+        $TERM --title "Install Packages" -e bash -c "~/.local/bin/om-browser pacman"
+        ;;
+    "$OPT_AUR")
+        $TERM --title "Install AUR" -e bash -c "~/.local/bin/om-browser aur"
+        ;;
+    "$OPT_REM")
+        $TERM --title "Remove Packages" -e bash -c "~/.local/bin/om-browser remove"
+        ;;
+esac

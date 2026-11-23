@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=Opencode
+Comment=Opencode
+Exec=app-manager --run-tui "TUI.float" opencode
+Terminal=false
+Type=Application
+Icon=opencode
+StartupNotify=true

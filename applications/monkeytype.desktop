@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Monkeytype
+Comment=Typing practice
+Exec=google-chrome-stable --app=https://monkeytype.com --class=Monkeytype --disable-features=TranslateUI --disable-session-crashed-bubble
+Icon=web-browser
+Terminal=false
+Type=Application
+Categories=Network;
+StartupWMClass=Monkeytype

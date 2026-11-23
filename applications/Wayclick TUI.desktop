@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=Wayclick TUI
+Comment=Wayclick TUI
+Exec=app-manager --run-tui "TUI.float" /home/jabir/user_scripts/wayclick/dusky_tui_wayclick.sh
+Terminal=false
+Type=Application
+Icon=input-keyboard
+StartupNotify=true

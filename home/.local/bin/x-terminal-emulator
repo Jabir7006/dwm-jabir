@@ -1,0 +1,19 @@
+#!/bin/sh
+# XDG/ocean: unified entry point for "open terminal in this directory".
+# exo calls this with either no arguments (cwd already set by g_spawn_async)
+# or with the target directory as a single argument.
+term="alacritty"
+command -v kitty >/dev/null 2>&1 && [ ! -x "/usr/bin/$term" ] && term="kitty"
+
+if [ "$#" -eq 0 ]; then
+    exec "$term"
+fi
+
+if [ "$#" -eq 1 ] && [ -d "$1" ]; then
+    case "$term" in
+        alacritty) exec alacritty --working-directory "$1" ;;
+        kitty)     exec kitty --directory "$1" ;;
+    esac
+fi
+
+exec "$term" "$@"

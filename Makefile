@@ -35,10 +35,10 @@ install: all
 	install -Dm755 dwm ${DESTDIR}${PREFIX}/bin/dwm
 	sed "s/VERSION/${VERSION}/g" dwm.1 | install -Dm644 /dev/stdin ${DESTDIR}${MANPREFIX}/man1/dwm.1
 	@echo "==> Setting up X session entries..."
-	if [ ! -d /usr/share/xsessions ]; then \
-		mkdir -p /usr/share/xsessions; \
+	if [ ! -d "${DESTDIR}/usr/share/xsessions" ]; then \
+		mkdir -p "${DESTDIR}/usr/share/xsessions"; \
 	fi
-	install -Dm644 dwm.desktop /usr/share/xsessions/
+	install -Dm644 dwm.desktop "${DESTDIR}/usr/share/xsessions/"
 	install -Dm644 scripts/.xinitrc ${USER_HOME}/.xinitrc
 	@echo "==> Syncing local repo to data dir..."
 	mkdir -p ${DATA_DIR}
@@ -46,6 +46,7 @@ install: all
 		cp -rf . ${DATA_DIR}/; \
 	fi
 	@echo "==> Installing config directories..."
+	mkdir -p "${CFG_DIR}"
 	for dir in config/*/; do \
 		dst=${CFG_DIR}/$$(basename "$$dir"); \
 		[ -L "$$dst" ] && rm -f "$$dst"; \
@@ -53,14 +54,15 @@ install: all
 	done
 	@echo "==> Installing scripts to PATH..."
 	for f in scripts/*; do \
+		[ -f "$$f" ] || continue; \
 		case "$$(basename $$f)" in autostart*) continue;; esac; \
-		install -Dm755 "$$f" ${DESTDIR}${PREFIX}/bin/$$(basename $$f); \
+		install -Dm755 "$$f" "${DESTDIR}${PREFIX}/bin/$$(basename $$f)"; \
 	done
 	@echo "==> Seeding user config (skipping existing files)..."
-	mkdir -p ${CFG_DIR}/dwm-titus
-	test -f ${CFG_DIR}/dwm-titus/hotkeys.toml || install -Dm644 config/hotkeys.toml ${CFG_DIR}/dwm-titus/hotkeys.toml
-	test -f ${CFG_DIR}/dwm-titus/themes.toml  || install -Dm644 config/themes.toml  ${CFG_DIR}/dwm-titus/themes.toml
-	test -f ${CFG_DIR}/dwm-titus/window-rules.toml || install -Dm644 config/window-rules.toml ${CFG_DIR}/dwm-titus/window-rules.toml
+	mkdir -p "${CFG_DIR}/dwm-titus"
+	test -f "${CFG_DIR}/dwm-titus/hotkeys.toml" || install -Dm644 config/dwm-titus/hotkeys.toml "${CFG_DIR}/dwm-titus/hotkeys.toml"
+	test -f "${CFG_DIR}/dwm-titus/themes.toml"  || install -Dm644 config/dwm-titus/themes.toml  "${CFG_DIR}/dwm-titus/themes.toml"
+	test -f "${CFG_DIR}/dwm-titus/window-rules.toml" || install -Dm644 config/dwm-titus/window-rules.toml "${CFG_DIR}/dwm-titus/window-rules.toml"
 	@echo "==> Installing font aliases for cross-distro naming..."
 	mkdir -p ${CFG_DIR}/fontconfig/conf.d
 	if [ ! -f ${CFG_DIR}/fontconfig/conf.d/50-meslolgs-nerd-font-aliases.conf ]; then \
@@ -100,10 +102,10 @@ install: all
 	for dir in config/*/; do \
 		b=$$(basename $$dir); \
 		find "${CFG_DIR}/$$b" -name '*.sh' -o -name '*.py' 2>/dev/null | xargs -r chmod +x; \
-		chown -R ${OWNER}: "${CFG_DIR}/$$b"; \
+		chown -R ${OWNER}: "${CFG_DIR}/$$b" 2>/dev/null || true; \
 	done
-	chown -R ${OWNER}: ${CFG_DIR}/fontconfig 2>/dev/null || true
-	chown -R ${OWNER}: ${DATA_DIR} && chown ${OWNER}: ${USER_HOME}/.xinitrc 2>/dev/null || true
+	chown -R ${OWNER}: "${CFG_DIR}/fontconfig" 2>/dev/null || true
+	chown -R ${OWNER}: "${DATA_DIR}" && chown ${OWNER}: "${USER_HOME}/.xinitrc" 2>/dev/null || true
 	@echo ""
 	@echo "  dwm installed successfully."
 	@echo "  Log out and select 'dwm', or start with: startx"
@@ -112,11 +114,11 @@ install: all
 uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/dwm \
 		${DESTDIR}${MANPREFIX}/man1/dwm.1 \
-		/usr/share/xsessions/dwm.desktop
+		${DESTDIR}/usr/share/xsessions/dwm.desktop
 
 release: dwm
 	mkdir -p release
-	cp -f dwm dwm.desktop .xinitrc release/
+	cp -f dwm dwm.desktop release/
 	cp -rf config scripts release/
 	tar -czf release/Omitus-${VERSION}.tar.gz -C release dwm dwm.desktop .xinitrc config scripts
 

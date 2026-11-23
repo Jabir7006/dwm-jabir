@@ -1,0 +1,106 @@
+[general]
+live_config_reload = true
+working_directory = "None"
+
+# Active theme — managed by theme-apply.sh, do not edit manually.
+# Change the theme in ~/.config/dwm-titus/themes.toml instead.
+import = [
+  "~/.config/alacritty/active-theme.toml",
+  "~/.config/alacritty/keybinds.toml"
+]
+
+[terminal.shell]
+program = "fish"
+
+[window]
+title = "foot"
+decorations = "none"
+blur = false
+opacity = 1.0
+padding.x = 25
+padding.y = 25
+dynamic_padding = true
+
+[window.dimensions]
+columns = 160
+lines = 80
+
+[scrolling]
+history = 10000
+
+[cursor]
+thickness = 0.15
+
+[cursor.style]
+shape = "Beam"
+blinking = "Never"
+
+[colors]
+#transparent_background_colors = true
+draw_bold_text_with_bright_colors = false
+
+[env]
+TERM = "xterm-256color"
+# WINIT_X11_SCALE_FACTOR = "1" # Uncomment if you are using X11 and want to enforce dpi-aware=no
+
+[font]
+size = 11
+
+[font.offset]
+x = 0
+y = 0
+
+[font.normal]
+family = "JetBrains Mono Nerd Font"
+style = "Regular"
+
+[font.bold]
+family = "JetBrains Mono Nerd Font"
+style = "Bold"
+
+[font.italic]
+family = "JetBrains Mono Nerd Font"
+style = "Italic"
+
+# --- KEYBINDINGS ---
+
+[[keyboard.bindings]]
+key = "PageUp"
+action = "ScrollPageUp"
+
+[[keyboard.bindings]]
+key = "PageDown"
+action = "ScrollPageDown"
+
+[[keyboard.bindings]]
+key = "F"
+mods = "Control|Shift"
+action = "SearchForward"
+
+# Search Mode Bindings
+[[keyboard.bindings]]
+key = "Escape"
+mode = "Search"
+action = "SearchCancel"
+
+[[keyboard.bindings]]
+key = "F3"
+mods = "Shift"
+mode = "Search"
+action = "SearchBackward"
+
+[[keyboard.bindings]]
+key = "F3"
+mode = "Search"
+action = "SearchForward"
+
+[[keyboard.bindings]]
+key = "G"
+mods = "Control"
+mode = "Search"
+action = "SearchForward"
+
+[[keyboard.bindings]]
+key = "Return"
+mods = "Shift"
+chars = "\u001B\r"

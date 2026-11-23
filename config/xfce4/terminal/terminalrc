@@ -1,0 +1,4 @@
+[Configuration]
+FontUseSystem=FALSE
+FontName=Noto Sans Mono 14
+MiscAlwaysShowTabs=FALSE

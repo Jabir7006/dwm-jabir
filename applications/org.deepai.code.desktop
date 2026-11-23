@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DeepAI Code
+Exec="/home/jabir/Applications/DeepAI-Code-0.3.44-x86_64.AppImage" %U
+Icon=/home/jabir/.local/share/icons/org.deepai.code.desktop.png
+Terminal=false
+NoDisplay=true
+StartupNotify=false
+MimeType=x-scheme-handler/deepai-code;

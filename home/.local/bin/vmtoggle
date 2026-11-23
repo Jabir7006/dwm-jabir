@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# vmtoggle - libvirt/KVM এবং এর ব্যাকগ্রাউন্ড সার্ভিস একসাথে চালু/বন্ধ করে
+#
+# ব্যবহার:
+#   vmtoggle on        সব চালু করে (libvirtd + default নেটওয়ার্ক)
+#   vmtoggle off       সব বন্ধ করে (VM চললে থামে)
+#   vmtoggle off -f    চলমান VM গুলো শাটডাউন করে তারপর সব বন্ধ করে
+#   vmtoggle toggle    চালু থাকলে বন্ধ, বন্ধ থাকলে চালু
+#   vmtoggle status    এখন কী চলছে দেখায়
+
+set -u
+
+URI="qemu:///system"
+NET="default"
+
+SERVICES=(libvirtd.service virtlogd.service virtlockd.service)
+SOCKETS=(
+  libvirtd.socket libvirtd-ro.socket libvirtd-admin.socket
+  virtlogd.socket virtlogd-admin.socket
+  virtlockd.socket virtlockd-admin.socket
+)
+
+if [ -t 1 ]; then
+  G=$'\e[32m'; R=$'\e[31m'; Y=$'\e[33m'; N=$'\e[0m'
+else
+  G=""; R=""; Y=""; N=""
+fi
+ok()   { echo "${G}[ok]${N} $*"; }
+warn() { echo "${Y}[!]${N} $*"; }
+err()  { echo "${R}[x]${N} $*" >&2; }
+
+vsh() { sudo virsh -c "$URI" "$@"; }
+
+unit_exists() {
+  systemctl list-unit-files "$1" --no-legend 2>/dev/null | grep -q "^$1"
+}
+
+is_on() {
+  systemctl is-active --quiet libvirtd.service
+}
+
+running_vms() {
+  vsh list --name 2>/dev/null | sed '/^$/d'
+}
+
+net_active() {
+  vsh net-info "$NET" 2>/dev/null | grep -qi '^Active:[[:space:]]*yes'
+}
+
+do_on() {
+  sudo -v || exit 1
+
+  for u in "${SOCKETS[@]}"; do
+    unit_exists "$u" && sudo systemctl start "$u"
+  done
+  for u in "${SERVICES[@]}"; do
+    unit_exists "$u" && sudo systemctl start "$u"
+  done
+
+  # libvirtd সাড়া দেওয়া পর্যন্ত অপেক্ষা (সর্বোচ্চ ১০ সেকেন্ড)
+  for _ in $(seq 1 10); do
+    vsh version >/dev/null 2>&1 && break
+    sleep 1
+  done
+
+  if ! vsh version >/dev/null 2>&1; then
+    err "libvirtd চালু হয়নি। দেখুন: journalctl -u libvirtd -n 30"
+    exit 1
+  fi
+  ok "libvirtd চালু"
+
+  if net_active; then
+    ok "নেটওয়ার্ক '$NET' আগে থেকেই চালু"
+  elif vsh net-start "$NET" >/dev/null 2>&1; then
+    ok "নেটওয়ার্ক '$NET' চালু (virbr0)"
+  else
+    err "নেটওয়ার্ক '$NET' চালু হয়নি। iptables-nft আর dnsmasq ইনস্টল আছে কি না দেখুন।"
+  fi
+
+  echo "এখন virt-manager খুলতে পারেন।"
+}
+
+do_off() {
+  local force=${1:-}
+  sudo -v || exit 1
+
+  if pgrep -x virt-manager >/dev/null; then
+    warn "virt-manager খোলা আছে। এটা বন্ধ না করলে সার্ভিস আবার চালু হয়ে যেতে পারে।"
+  fi
+
+  if is_on; then
+    local vms
+    vms=$(running_vms)
+    if [ -n "$vms" ]; then
+      if [ "$force" = "-f" ]; then
+        warn "চলমান VM শাটডাউন করা হচ্ছে:"
+        echo "$vms"
+        while read -r vm; do
+          [ -n "$vm" ] && vsh shutdown "$vm" >/dev/null 2>&1
+        done <<< "$vms"
+        for _ in $(seq 1 30); do
+          [ -z "$(running_vms)" ] && break
+          sleep 1
+        done
+        if [ -n "$(running_vms)" ]; then
+          warn "৩০ সেকেন্ডে বন্ধ হয়নি, জোর করে বন্ধ করা হচ্ছে।"
+          while read -r vm; do
+            [ -n "$vm" ] && vsh destroy "$vm" >/dev/null 2>&1
+          done <<< "$(running_vms)"
+        fi
+      else
+        err "এই VM গুলো এখনও চলছে:"
+        echo "$vms"
+        err "আগে Windows থেকে Shut down দিন, অথবা চালান: vmtoggle off -f"
+        exit 1
+      fi
+    fi
+
+    if net_active; then
+      vsh net-destroy "$NET" >/dev/null 2>&1 && ok "নেটওয়ার্ক '$NET' বন্ধ"
+    fi
+  fi
+
+  # সকেট আগে বন্ধ করতে হবে, নাহলে সার্ভিস আবার চালু হয়ে যায়
+  for u in "${SOCKETS[@]}"; do
+    unit_exists "$u" && sudo systemctl stop "$u" 2>/dev/null
+  done
+  for u in "${SERVICES[@]}"; do
+    unit_exists "$u" && sudo systemctl stop "$u" 2>/dev/null
+  done
+  ok "libvirt সার্ভিস ও সকেট বন্ধ"
+
+  verify_off
+}
+
+verify_off() {
+  local left
+  left=$(ps -eo pid,user,args | grep -E 'libvirtd|virtlogd|virtlockd|qemu-system|dnsmasq' | grep -v grep | grep -v vmtoggle)
+  if [ -n "$left" ]; then
+    warn "এখনও এগুলো চলছে:"
+    echo "$left"
+  else
+    ok "libvirt সম্পর্কিত কোনো প্রসেস চলছে না"
+  fi
+
+  if ip link show virbr0 >/dev/null 2>&1; then
+    warn "virbr0 ব্রিজ এখনও আছে (রিবুটে বা 'sudo ip link delete virbr0' দিয়ে যাবে)"
+  else
+    ok "virbr0 নেই"
+  fi
+}
+
+do_status() {
+  echo "--- সার্ভিস ---"
+  for u in "${SERVICES[@]}" "${SOCKETS[@]}"; do
+    unit_exists "$u" || continue
+    printf "%-28s active=%-9s enabled=%s\n" "$u" \
+      "$(systemctl is-active "$u" 2>/dev/null)" \
+      "$(systemctl is-enabled "$u" 2>/dev/null)"
+  done
+  echo "--- চলমান প্রসেস ---"
+  ps -eo pid,user,rss,args | grep -E 'libvirtd|virtlogd|virtlockd|qemu-system|dnsmasq' | grep -v grep | grep -v vmtoggle || echo "(কিছু নেই)"
+  echo "--- নেটওয়ার্ক ---"
+  ip link show virbr0 2>/dev/null | head -1 || echo "virbr0 নেই"
+}
+
+case "${1:-}" in
+  on)     do_on ;;
+  off)    do_off "${2:-}" ;;
+  toggle) if is_on; then do_off "${2:-}"; else do_on; fi ;;
+  status) do_status ;;
+  *)      sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

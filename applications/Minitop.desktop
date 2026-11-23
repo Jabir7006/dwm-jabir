@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=Minitop
+Comment=Minitop
+Exec=app-manager --run-tui "TUI.tile" python3 minitop.py
+Terminal=false
+Type=Application
+Icon=utilities-terminal
+StartupNotify=true

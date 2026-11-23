@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Rofi front-end for clipmenu's clip list.
+#
+# Invoked by /usr/bin/clipmenu as:  clipboard-launcher -l <CM_HISTLENGTH>
+# with the clip list (newest first, one line per entry) on stdin.
+# Prints the chosen line back to clipmenu, which then restores the full
+# (possibly multi-line) clip from its cache.
+#
+# A "Clear clipboard history" row is injected as the first item. Picking it
+# wipes the cache with clipdel and exits non-zero so clipmenu does not try to
+# restore anything.
+
+set -uo pipefail
+
+ROFI_THEME="${HOME}/.config/rofi/clipboard.rasi"
+CLEAR_ROW="Clear clipboard history"
+PROMPT="Clipboard"
+
+mapfile -t clips < <(grep -v '^[[:space:]]*$' || true)
+
+# No history yet: show only the clear row, disabled-ish by being the sole item.
+if [[ ${#clips[@]} -eq 0 ]]; then
+    CLEAR_ROW="No history yet"
+fi
+
+chosen=$(
+    printf '%s\n' "$CLEAR_ROW" "${clips[@]}" |
+        rofi -dmenu -i -no-custom \
+            -p "$PROMPT" \
+            -theme "$ROFI_THEME" \
+            "$@"
+) || exit 1
+
+[[ -n ${chosen} ]] || exit 1
+
+if [[ ${chosen} == "${CLEAR_ROW}" ]]; then
+    clipdel -d '.*' >/dev/null 2>&1
+    exit 1
+fi
+
+printf '%s\n' "${chosen}"

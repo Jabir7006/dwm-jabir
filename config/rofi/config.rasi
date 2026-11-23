@@ -1,0 +1,116 @@
+/* 
+ * macOS Spotlight Theme for Rofi 2.0.0
+ * Optimized for low-resource rendering 
+ */
+
+configuration {
+    modi: "drun,run";
+    show-icons: true;
+    display-drun: "🔍";
+    drun-display-format: "{name}";
+    
+    /* Disable automatic mouse selection on launch */
+    hover-select: false; 
+    me-select-entry: "";
+    me-accept-entry: "MousePrimary";
+}
+/* Colors are injected dynamically by theme-apply.sh via active-colors.rasi */
+@import "active-colors.rasi"
+
+* {
+    background-color: transparent;
+    text-color:       @fg;
+    
+    /* Change to Inter, Roboto, or San Francisco if you have them installed */
+    font: "JetBrains Mono Nerd Font 12"; 
+}
+
+window {
+    background-color: @bg;
+    /* 1px accent border (DWM draws its own window border too — both share
+       the theme accent, so they read as one matched frame). */
+    border:           1px;
+    border-color:     @border-color;
+    border-radius:    0px; /* macOS rounded corners */
+    width:            640px;
+    padding:          0px;
+    location:         center;
+    anchor:           center;
+    
+    /* Optimize Wayland/X11 rendering by skipping initial high-DPI scaling flicker */
+    transparency:     "real";
+}
+
+mainbox {
+    children: [ inputbar, listview ];
+    spacing:  0px;
+}
+
+inputbar {
+    margin:           14px 16px 6px 16px;
+    background-color: @bg-selected;
+    border-radius:    10px;
+    padding:          10px 16px;
+    spacing:          12px;
+    children:         [ prompt, entry ];
+}
+
+prompt {
+    text-color:     @fg-alt;
+    font:           "sans-serif 16";
+    vertical-align: 0.5;
+}
+
+entry {
+    placeholder:       "Spotlight Search";
+    placeholder-color: @fg-alt;
+    text-color:        @fg;
+    font:              "sans-serif 16";
+    vertical-align:    0.5;
+    /* Hide cursor for cleaner Spotlight aesthetic */
+    cursor:            text;
+}
+
+listview {
+    background-color: transparent;
+    border:           0px;
+    columns:          1;
+    lines:            8;
+    cycle:            true;
+    scrollbar:        false;
+    layout:           vertical;
+    padding:          8px 12px 12px 12px;
+    spacing:          4px;
+    /* Fixed height prevents the window from resizing as you type */
+    fixed-height:     true;
+    fixed-columns:    true;
+}
+
+element {
+    padding:       10px 12px;
+    border-radius: 8px;
+    spacing:       16px;
+    children:      [ element-icon, element-text ];
+}
+
+element normal.normal, element alternate.normal {
+    background-color: transparent;
+    text-color:       @fg;
+}
+
+element selected.normal {
+    background-color: @bg-selected;
+    text-color:       @fg;
+}
+
+element-icon {
+    size:             28px;
+    background-color: transparent;
+}
+
+element-text {
+    vertical-align:   0.5;
+    background-color: transparent;
+    text-color:       inherit;
+    highlight:        bold;
+}

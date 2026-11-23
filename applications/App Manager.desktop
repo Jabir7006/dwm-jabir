@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=App Manager
+Comment=Create or remove Web Apps and TUI apps
+Exec=app-manager
+Terminal=false
+Type=Application
+Icon=app-launcher
+Categories=System;Utility;
+StartupNotify=true

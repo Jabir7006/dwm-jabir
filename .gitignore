@@ -11,6 +11,17 @@ config.h
 # Object Files
 *.o
 
+# secrets (never commit)
+secrets.env
+secrets.fish
+.git-credentials
+*.secret
+
+# local backups
+.config-backup-*
+*.bak-*
+*.bak
+
 nohup.out
 .DS_STORE
 

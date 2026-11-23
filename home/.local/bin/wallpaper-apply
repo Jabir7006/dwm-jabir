@@ -1,0 +1,33 @@
+#!/bin/sh
+# wallpaper-apply — the ONE place a wallpaper gets applied (picture + theme).
+#
+# Shared by wallpaper-picker.sh (rofi grid) and wallpaper-carousel (filmstrip),
+# so both stay in sync with the dynamic-theme pipeline.
+#
+#   wallpaper-apply ~/Pictures/backgrounds/foo.jpg
+#
+# When the active theme is "dynamic", colors are regenerated from the new
+# picture via theme-set-dynamic. Under a static theme the picture is set and
+# [theme.dynamic] is only staged for later use — the running theme is untouched.
+
+file="$1"
+[ -n "${file:-}" ] || { echo "wallpaper-apply: usage: wallpaper-apply <image>" >&2; exit 1; }
+[ -f "$file" ] || { echo "wallpaper-apply: not found: $file" >&2; exit 1; }
+
+active="$(awk -F'"' '/^\[active\]/{f=1} f&&/theme =/{print $2; exit}' \
+    "${XDG_CONFIG_HOME:-$HOME/.config}/dwm-titus/themes.toml" 2>/dev/null)"
+
+if [ -x "$HOME/.local/bin/theme-set-dynamic" ]; then
+    if [ "$active" = "dynamic" ]; then
+        out="$("$HOME/.local/bin/theme-set-dynamic" "$file" 2>&1 | tail -n 1)"
+        command -v notify-send >/dev/null 2>&1 && notify-send "Dynamic theme" "${out:-applied}" 2>/dev/null &
+    else
+        "$HOME/.local/bin/theme-set-dynamic" --stage-only "$file" >/dev/null 2>&1
+        command -v notify-send >/dev/null 2>&1 && notify-send "Wallpaper" "$(basename "$file")" 2>/dev/null &
+    fi
+    exit 0
+fi
+
+feh --bg-fill "$file"
+command -v notify-send >/dev/null 2>&1 && notify-send "Wallpaper" "$(basename "$file")" 2>/dev/null &
+exit 0

@@ -1,0 +1,1832 @@
+#!/usr/bin/env python3
+# wallpaper-carousel — Omarchy-style wallpaper picker for X11/dwm.
+#
+# This is a native GTK4 port of Omarchy's shell/plugins/image-picker overlay:
+# the current wallpaper stays as the backdrop, a large centre card shows the
+# selected picture, and tall dimmed slices of its neighbours tuck in behind it
+# on both sides. The only chrome is a small animation toggle at the top; click
+# outside or press Esc to cancel. Delete asks for confirmation first.
+#
+# Geometry and colours are taken verbatim from ImagePicker.qml:
+#   card 768x475 · slices 108x432 · spacing -30 · skew 28 (parallelogram)
+#   selected border 3px accent · unselected border 1px foreground@28%
+#   unselected image dim background@42%
+#
+# On-demand: nothing runs while it is closed, and it exits the moment a
+# wallpaper is applied or cancelled.
+#
+#   ←/→ or h/l/j/k   move        Enter/Space  apply      Esc/q  cancel
+#   Home/End         first/last  PgUp/PgDn    ±5         wheel/click  browse
+#   Delete           delete the selected image (with a confirmation)
+#   a                toggle the slide animation (remembered between launches)
+#   Tab              back to the rofi grid  ·  double-click applies
+#
+# Caches (shared with the rofi grid picker, so nothing is generated twice):
+#   ~/.cache/wallpaper-picker/thumbs   320x180   — immediate fallback
+#   ~/.cache/wallpaper-picker/preview  1400x788  — card + slices
+# Previews are built in a background thread the first time an image is shown, so
+# the window never stalls on a 20 MB PNG decode, and only the last few are kept
+# in memory.
+#
+# Colors come from ~/.config/rofi/active-colors.rasi, which theme-apply.sh
+# regenerates for the active theme — the picker always matches the running theme.
+#
+# Applying goes through ~/.local/bin/wallpaper-apply, the same path the rofi
+# grid uses, so the dynamic-theme pipeline stays in sync. The new wallpaper is
+# revealed with Omarchy's slanted 840 ms curtain (shell/plugins/background/
+# Background.qml); with the animation toggled off it is the old instant hand-off.
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import warnings
+from collections import deque
+
+os.environ.setdefault("GTK_A11Y", "none")  # no a11y bus in a dwm session
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
+gi.require_version("GdkPixbuf", "2.0")
+gi.require_version("Gsk", "4.0")
+gi.require_version("Graphene", "1.0")
+from gi.repository import (  # noqa: E402
+    Gdk, GdkPixbuf, Gio, GLib, Graphene, Gsk, Gtk,
+)
+
+try:  # only needed for the window id we hand to xdotool; X11-only
+    gi.require_version("GdkX11", "4.0")
+    from gi.repository import GdkX11  # noqa: E402
+except (ValueError, ImportError):
+    GdkX11 = None
+
+# WM_CLASS for dwm: without this it is "python3", so no window rule could match
+# this window (see ~/.config/dwm-titus/window-rules.toml). Has to be set before
+# the surface exists.
+GLib.set_prgname("wallpaper-carousel")
+
+APP_ID = "org.jabir.wallpaper-carousel"
+# polybar's strip along the top of the screen: height 30 + 1px bottom border.
+# Keep in sync with ~/.config/polybar/themes/*/laptop-config.ini
+BAR_H = 31
+WALL_DIR = os.path.expanduser(os.environ.get("WALLPAPER_DIR") or "~/Pictures/backgrounds")
+CACHE_DIR = os.path.join(
+    os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "wallpaper-picker"
+)
+THUMB_DIR = os.path.join(CACHE_DIR, "thumbs")
+PREVIEW_DIR = os.path.join(CACHE_DIR, "preview")
+APPLY = os.path.expanduser(
+    os.environ.get("WALLPAPER_APPLY") or "~/.local/bin/wallpaper-apply"
+)
+PICKER = os.path.expanduser("~/.local/bin/wallpaper-picker.sh")
+COLORS_RASI = os.path.expanduser("~/.config/rofi/active-colors.rasi")
+THEMES_TOML = os.path.expanduser("~/.config/dwm-titus/themes.toml")
+STATE_DIR = os.path.join(
+    os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+    "wallpaper-carousel",
+)
+STATE_FILE = os.path.join(STATE_DIR, "state")
+EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+THUMB_SIZE = "320x180"
+PREVIEW_SIZE = "1400x788"
+PREVIEW_KEEP = 12  # decoded previews kept in memory (~3 MB each: slice + card)
+PREVIEW_JOBS = 2   # concurrent magick builds; more just fights for the CPU
+THUMB_JOBS = 2     # ...and for thumbnails on a cold cache
+TEX_KEEP = 20      # GPU textures kept alive (~1.5 MB each)
+PREVIEW_KEEP_MAX = 36   # caps for very wide screens / large collections
+TEX_KEEP_MAX = 48
+THUMB_KEEP = 64         # thumbnails kept in memory (~230 KB each)
+
+# ── Omarchy image-picker geometry (shell/plugins/image-picker/ImagePicker.qml) ─
+EXPANDED_W = 768
+EXPANDED_H = 475
+SLICE_W = 108
+SLICE_H = 432
+SLICE_SPACING = -30
+SLICE_STEP = SLICE_W + SLICE_SPACING          # 78 px — neighbouring centres
+SKEW_OFFSET = 28   # Omarchy ImagePicker.qml skewOffset: parallelogram corners
+DIM_ALPHA = 0.42
+UNSELECTED_BORDER_ALPHA = 0.28
+SELECTED_BORDER_WIDTH = 3
+UNSELECTED_BORDER_WIDTH = 1
+
+# Motion — copied from skwd-wall's motion model rather than invented.
+# Its tiers are Fast 180 / Standard 250 / Slow 450 ms, and a tier's duration is
+# the time to settle to about 99.9%, from which the spring is derived:
+#     omega = ln(1000) / duration_s,  k = omega^2,  c = 2*zeta*omega
+# A touch under critical damping (zeta 0.80) gives the card a ~10 px settle
+# overshoot: enough to feel alive, not enough to read as a bounce. It is
+# integrated in 1/240 s substeps so the coefficients hold at any frame rate.
+SPRING_MS = 250.0
+SPRING_ZETA = 0.80
+_OMEGA = 6.64 / (SPRING_MS / 1000.0)
+SPRING_K = _OMEGA * _OMEGA
+SPRING_C = 2.0 * SPRING_ZETA * _OMEGA
+SPRING_HOP = 1.0 / 240.0
+
+# Applying a wallpaper, copied from Omarchy's background reveal
+# (shell/plugins/background/Background.qml): the new still is unmasked through
+# a slanted band (slant -0.18, relative to the screen height) that grows from
+# the middle of the display over 840 ms with Easing.OutCubic, while the
+# outgoing wallpaper stays at full brightness underneath. Qt does it with a
+# MultiEffect mask; this does the same cut with a Gsk mask and no compositor.
+APPLY_MS = 840.0
+APPLY_SLANT = -0.18
+
+# How far the carousel rises while it fades in on open, and how much a hovered
+# slice brightens (the unselected dim goes 42% -> ~23%).
+REVEAL_RISE = 12.0
+HOVER_LIFT = 0.45
+
+
+def spring(x, v, target, dt):
+    """One step of the under-damped spring, substepped like skwd's."""
+    remaining = min(dt, 0.05)
+    while remaining > 0.0:
+        step = min(remaining, SPRING_HOP)
+        v += (-SPRING_K * (x - target) - SPRING_C * v) * step
+        x += v * step
+        remaining -= step
+    return x, v
+
+
+# ── theme colors ──────────────────────────────────────────────────────────────
+def theme_colors():
+    """Read the palette theme-apply.sh wrote for rofi; fall back to the dark set."""
+    colors = {
+        "bg": "#1A120E",
+        "fg": "#F1DFD8",
+        "bg-selected": "#52443D",
+        "fg-alt": "#A08D85",
+        "border-color": "#D47343",
+    }
+    try:
+        with open(COLORS_RASI, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = re.match(r"\s*([a-z][a-z-]*)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;", line)
+                if m:
+                    colors[m.group(1)] = m.group(2)
+    except OSError:
+        pass
+    return colors
+
+
+def rgb(hex_color):
+    h = str(hex_color).lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    try:
+        return tuple(int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    except (ValueError, IndexError):
+        return (0.0, 0.0, 0.0)
+
+
+def css_rgba(hex_color, alpha=1.0):
+    r, g, b = rgb(hex_color)
+    return "rgba(%d,%d,%d,%.3f)" % (round(r * 255), round(g * 255), round(b * 255), alpha)
+
+
+def rgba(hex_color, alpha=1.0):
+    """Gdk.RGBA for the snapshot API (css_rgba is a string, for CSS)."""
+    color = Gdk.RGBA()
+    r, g, b = rgb(hex_color)
+    color.red, color.green, color.blue, color.alpha = r, g, b, alpha
+    return color
+
+
+def theme_urgent(fallback="#565D60"):
+    """The active dwm-titus theme's `red`, which Omarchy calls `urgent`."""
+    try:
+        with open(THEMES_TOML, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return fallback
+    m = re.search(r'^\s*theme\s*=\s*"([^"]+)"', text, re.M)
+    if not m:
+        return fallback
+    block = re.search(
+        r"^\[theme\.%s\]\s*$(.*?)(?=^\[|\Z)" % re.escape(m.group(1)),
+        text,
+        re.M | re.S,
+    )
+    if not block:
+        return fallback
+    m = re.search(r'^\s*term_color1\s*=\s*"(#[0-9a-fA-F]{3,8})"', block.group(1), re.M)
+    return m.group(1) if m else fallback
+
+
+def load_animations():
+    try:
+        with open(STATE_FILE, encoding="utf-8", errors="replace") as fh:
+            return fh.read().strip() != "off"
+    except OSError:
+        return True
+
+
+def save_animations(enabled):
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        tmp = STATE_FILE + ".%d" % os.getpid()
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write("on\n" if enabled else "off\n")
+        os.replace(tmp, STATE_FILE)
+    except OSError:
+        pass
+
+
+# ── cache ─────────────────────────────────────────────────────────────────────
+def build_cache(src, dst, size):
+    """Create an up-to-date `size` center-crop of src at dst. True when usable."""
+    try:
+        if os.path.exists(dst) and os.path.getmtime(dst) >= os.path.getmtime(src):
+            return True
+    except OSError:
+        return False
+    tool = shutil.which("magick") or shutil.which("convert")
+    if tool is None:
+        return False
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    tmp = "%s.%d.part" % (dst, os.getpid())
+    try:
+        ok = (
+            subprocess.run(
+                [
+                    tool, src,
+                    "-thumbnail", size + "^",
+                    "-gravity", "center",
+                    "-extent", size,
+                    "-quality", "88",
+                    tmp,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=60,
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        ok = False
+    if ok:
+        os.replace(tmp, dst)
+    else:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    return ok
+
+
+def cache_path(img, kind):
+    stem = os.path.splitext(os.path.basename(img))[0]
+    return os.path.join(THUMB_DIR if kind == "thumb" else PREVIEW_DIR, stem + ".jpg")
+
+
+def load_pixbuf(path):
+    try:
+        return GdkPixbuf.Pixbuf.new_from_file(path)
+    except GLib.Error:
+        return None
+
+
+def pixbuf_texture(pb):
+    """GdkTexture from a pixbuf without the deprecated new_for_pixbuf()."""
+    builder = Gdk.MemoryTextureBuilder.new()
+    builder.set_bytes(GLib.Bytes.new(pb.get_pixels()))
+    builder.set_width(pb.get_width())
+    builder.set_height(pb.get_height())
+    builder.set_stride(pb.get_rowstride())
+    builder.set_format(
+        Gdk.MemoryFormat.R8G8B8A8 if pb.get_has_alpha() else Gdk.MemoryFormat.R8G8B8
+    )
+    return builder.build()
+
+
+def cover_scale(pb, w, h):
+    """Downscale pb so it covers w x h (never upscales: GTK does that itself)."""
+    pw, ph = pb.get_width(), pb.get_height()
+    if pw <= 0 or ph <= 0:
+        return pb
+    scale = max(w / float(pw), h / float(ph))
+    if scale >= 1.0:
+        return pb
+    return pb.scale_simple(
+        max(1, int(round(pw * scale))),
+        max(1, int(round(ph * scale))),
+        GdkPixbuf.InterpType.BILINEAR,
+    )
+
+
+def current_wallpaper():
+    """The picture feh last applied (persisted in ~/.fehbg), if it still exists."""
+    try:
+        with open(os.path.expanduser("~/.fehbg"), encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return None
+    m = re.search(r"--bg-fill\s+(?:'([^']+)'|\"([^\"]+)\"|(\S+))", text)
+    if not m:
+        return None
+    path = next((g for g in m.groups() if g), "")
+    path = os.path.expanduser(path)
+    return path if path and os.path.isfile(path) else None
+
+
+def find_wallpapers():
+    try:
+        entries = sorted(os.listdir(WALL_DIR))
+    except OSError:
+        return []
+    return [
+        os.path.join(WALL_DIR, e)
+        for e in entries
+        if e.lower().endswith(EXTS) and os.path.isfile(os.path.join(WALL_DIR, e))
+    ]
+
+
+# ── app ───────────────────────────────────────────────────────────────────────
+class Stage(Gtk.Fixed):
+    """Gtk.Fixed that never dictates the window size.
+
+    The slices are positioned by hand, some of them outside the visible area
+    (negative x, or past the right edge), so Fixed's natural size would grow with
+    the carousel and drag the window along with it. Reporting a zero measurement
+    keeps the stage at whatever size the window gives it.
+    """
+
+    def do_measure(self, _orientation, _for_size):
+        return 0, 0, -1, -1
+
+
+class Card(Gtk.Widget):
+    """One slice or the big card, painted as Omarchy's parallelogram.
+
+    ImagePicker.qml masks every item with a Shape whose top-left and
+    bottom-right corners are cut by skewOffset (28 px), then strokes the same
+    outline: 3 px accent for the selected card, 1 px foreground@28% for the
+    slices. GTK has no skewed rectangle and no CSS border on a custom shape, so
+    the mask is done with Gsk (push_mask) and the border with append_stroke.
+    There is no cairo and no intermediate surface — one GPU node per item, the
+    same as the Gtk.Picture it replaces.
+    """
+
+    __gtype_name__ = "WallpaperCard"
+
+    def __init__(self, owner):
+        super().__init__()
+        self._owner = owner
+        self.texture = None
+        self.dim = DIM_ALPHA
+        self.sel = 0.0          # 0 = slice, 1 = the expanded card (springs)
+        self.set_halign(Gtk.Align.FILL)
+        self.set_valign(Gtk.Align.FILL)
+        if owner._cursor_pointer is not None:
+            self.set_cursor(owner._cursor_pointer)
+
+    @staticmethod
+    def _skew(w, h):
+        return min(float(SKEW_OFFSET), w / 2.0, h / 2.0)
+
+    def _path(self, w, h, inset=0.0):
+        sk = self._skew(w, h)
+        if not inset:
+            pts = ((sk, 0.0), (w, 0.0), (w - sk, h), (0.0, h))
+        else:
+            # GTK clips a snapshot to the allocation, so a centred stroke would
+            # lose its outer half; inset the outline by half the line width and
+            # the whole stroke stays visible (Omarchy draws 3 px, not 1.5).
+            slide = inset * sk / h if h else 0.0
+            pts = (
+                (max(0.0, sk - slide + inset), min(h, inset)),
+                (max(0.0, w - inset), min(h, inset)),
+                (max(0.0, w - sk + slide - inset), max(0.0, h - inset)),
+                (min(w, inset), max(0.0, h - inset)),
+            )
+        builder = Gsk.PathBuilder.new()
+        builder.move_to(*pts[0])
+        builder.line_to(*pts[1])
+        builder.line_to(*pts[2])
+        builder.line_to(*pts[3])
+        builder.close()
+        return builder.to_path()
+
+    def do_snapshot(self, snap):
+        w = self.get_width()
+        h = self.get_height()
+        if w < 2 or h < 2:
+            return
+        owner = self._owner
+        bounds = Graphene.Rect().init(0, 0, w, h)
+        path = self._path(w, h)
+
+        # Mask: everything drawn until the first pop() becomes the alpha mask.
+        snap.push_mask(Gsk.MaskMode.ALPHA)
+        snap.append_fill(path, Gsk.FillRule.WINDING, owner._white)
+        snap.pop()
+
+        # Source: Omarchy's stack is background, image (PreserveAspectCrop),
+        # then background@42% over the unselected slices.
+        snap.append_color(owner._bg, bounds)
+        texture = self.texture
+        if texture is not None:
+            tw, th = texture.get_width(), texture.get_height()
+            if tw > 0 and th > 0:
+                scale = max(w / float(tw), h / float(th))
+                dw, dh = tw * scale, th * scale
+                snap.append_texture(
+                    texture,
+                    Graphene.Rect().init((w - dw) / 2.0, (h - dh) / 2.0, dw, dh),
+                )
+        if self.dim > 0.001:
+            snap.append_color(owner._dim_color(self.dim), bounds)
+        snap.pop()
+
+        line = UNSELECTED_BORDER_WIDTH + (
+            SELECTED_BORDER_WIDTH - UNSELECTED_BORDER_WIDTH
+        ) * self.sel
+        border = owner._mix_color(owner._unselected_border, owner._accent, self.sel)
+        snap.append_stroke(self._path(w, h, line / 2.0), Gsk.Stroke.new(line), border)
+
+
+class ApplyReveal(Gtk.Widget):
+    """Omarchy's wallpaper cut: a slanted band opening from the centre.
+
+    Drawn above the whole picker so the new still sweeps in over the outgoing
+    wallpaper at full brightness. The band is a parallelogram whose vertical
+    edges lean by -0.18 of the screen height, matching Background.qml's
+    revealMask; its half-width grows to reach past both screen edges, so at
+    progress 1 the frame is entirely the new wallpaper.
+    """
+
+    __gtype_name__ = "WallpaperApplyReveal"
+
+    def __init__(self, owner):
+        super().__init__()
+        self._owner = owner
+        self.texture = None
+        self.progress = 0.0
+        self.set_halign(Gtk.Align.FILL)
+        self.set_valign(Gtk.Align.FILL)
+        self.set_can_target(False)   # it only paints, it never eats input
+
+    def do_measure(self, _orientation, _for_size):
+        return 0, 0, -1, -1
+
+    def do_snapshot(self, snap):
+        w = self.get_width()
+        h = self.get_height()
+        if w < 2 or h < 2 or self.texture is None or self.progress <= 0.0:
+            return
+        p = min(1.0, max(0.0, self.progress))
+        slant = APPLY_SLANT
+        center_top = w / 2.0 - slant * h / 2.0
+        center_bottom = w / 2.0 + slant * h / 2.0
+        reach = w / 2.0 + abs(slant) * h / 2.0 + 4.0
+        spread = reach * p
+
+        builder = Gsk.PathBuilder.new()
+        builder.move_to(center_top - spread, 0.0)
+        builder.line_to(center_top + spread, 0.0)
+        builder.line_to(center_bottom + spread, h)
+        builder.line_to(center_bottom - spread, h)
+        builder.close()
+        path = builder.to_path()
+
+        snap.push_mask(Gsk.MaskMode.ALPHA)
+        snap.append_fill(path, Gsk.FillRule.WINDING, self._owner._white)
+        snap.pop()
+
+        texture = self.texture
+        tw, th = texture.get_width(), texture.get_height()
+        if tw > 0 and th > 0:
+            scale = max(w / float(tw), h / float(th))
+            dw, dh = tw * scale, th * scale
+            snap.append_texture(
+                texture,
+                Graphene.Rect().init((w - dw) / 2.0, (h - dh) / 2.0, dw, dh),
+            )
+        else:
+            snap.append_color(self._owner._bg, Graphene.Rect().init(0, 0, w, h))
+        snap.pop()
+
+
+class Carousel(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
+        self.walls = []
+        self.idx = 0
+        self.thumbs = {}        # path -> GdkPixbuf fallback
+        self.previews = {}      # path -> (slice pixbuf, card pixbuf), LRU-capped
+        self.backdrop_pb = None  # full preview of the current wallpaper
+        self.preview_order = []
+        self.building = set()   # paths with a background build in flight
+        self.textures = {}      # keep-alive refs for the backdrop texture
+        self.tex = {}           # (path, kind) -> GdkTexture for cards / slices
+        self.tex_order = []
+        self.queue = deque()    # preview builds waiting for a free slot
+        self.queued = set()     # ...and their paths, for O(1) membership
+        self.inflight = 0
+        self.thumb_queue = deque()   # same, for thumbnails (cold cache)
+        self.thumb_queued = set()
+        self.thumb_building = set()
+        self.thumb_jobs = 0
+        self.thumb_order = []        # thumbnail LRU
+        self.failed = set()     # previews that will not build; don't retry forever
+        self.win = None
+        self.canvas = None
+        self.backdrop = None
+        self.items = {}         # wallpaper index -> Card widget (slice/card)
+        self.order = []         # current z-order, far -> near -> selected
+        self.current_wall = None
+        self.colors = theme_colors()
+        self._bg = rgba(self.colors["bg"])
+        self._fg = rgba(self.colors["fg"])
+        self._accent = rgba(self.colors["border-color"])
+        self._unselected_border = rgba(self.colors["fg"], UNSELECTED_BORDER_ALPHA)
+        self._white = rgba("#ffffff")
+        self._urgent = rgba(theme_urgent())
+        self.animations = load_animations()
+        self.anim_btn = None
+        self.hud = None
+        self.dialog = None
+        self.dialog_card = None
+        self.dialog_msg = None
+        self.dialog_buttons = None
+        self.confirm_path = None
+        self.confirm_sel = 1
+        self.confirm_error = ""
+        self._anim_rect = None
+        self.radius = 5
+        # intro + per-slice hover + confirmation-dialog springs
+        self.reveal = 1.0
+        self.reveal_vel = 0.0
+        self.reveal_tgt = 1.0
+        self.hover_i = None
+        self.cur_hov = []
+        self.vel_hov = []
+        self.tgt_hov = []
+        self.dialog_a = 1.0
+        self.dialog_a_vel = 0.0
+        self.dialog_a_tgt = 1.0
+        # wallpaper-apply transition (the slanted curtain in ApplyReveal)
+        self.applying = False
+        self.apply_p = 0.0
+        self.apply_t0 = None
+        self.apply_proc = None
+        self.apply_overlay = None
+        self.force_quit = os.environ.get("WALLPAPER_CAROUSEL_AUTOCLOSE")
+        self._cursor_pointer = None
+        self._cursor_default = None
+
+        # spring state, one entry per wallpaper
+        self.cur_w = []
+        self.cur_h = []
+        self.cur_s = []
+        self.vel_w = []
+        self.vel_h = []
+        self.vel_s = []
+        self.tgt_w = []
+        self.tgt_h = []
+        self.tgt_s = []
+        self.tick_id = 0
+        self.last_frame = 0
+        self._geom = {}         # index -> last applied (x, y, w, h)
+
+    def _dim_color(self, alpha):
+        color = Gdk.RGBA()
+        color.red, color.green, color.blue = self._bg.red, self._bg.green, self._bg.blue
+        color.alpha = alpha
+        return color
+
+    @staticmethod
+    def _mix_color(a, b, t):
+        """Straight-alpha RGBA blend, used for the border morph."""
+        t = max(0.0, min(1.0, t))
+        color = Gdk.RGBA()
+        color.red = a.red + (b.red - a.red) * t
+        color.green = a.green + (b.green - a.green) * t
+        color.blue = a.blue + (b.blue - a.blue) * t
+        color.alpha = a.alpha + (b.alpha - a.alpha) * t
+        return color
+
+    # ── lifecycle ────────────────────────────────────────────────────────────
+    def do_activate(self):
+        if self.win is not None:
+            self.win.present()
+            return
+        self.walls = find_wallpapers()
+        if not self.walls:
+            self._bail("No wallpapers in %s" % WALL_DIR)
+            return
+
+        self.current_wall = current_wallpaper()
+        self.idx = 0
+        if self.current_wall:
+            for i, path in enumerate(self.walls):
+                if os.path.abspath(path) == os.path.abspath(self.current_wall):
+                    self.idx = i
+                    break
+        self._reset_springs()
+
+        self.win = Gtk.ApplicationWindow(application=self, title="Wallpaper")
+        self.win.set_decorated(False)
+        # Fullscreen first, work area a moment later — that is what makes this window
+        # borderless. dwm borders *every* floating window (noborder() returns 0 for
+        # them) and draws that 1px ring outside the geometry a client asks for, so a
+        # floating picker always shows a stray line along its top edge (and the left
+        # one) where the ring meets the screen edge. Fullscreen is the single state
+        # dwm makes borderless (setfullscreen sets c->bw = 0), and it keeps honouring
+        # this window's own geometry requests while it lasts, so _fit_work_area()
+        # puts the real work area back: bar visible, content edge to edge, no ring.
+        # Without xdotool there is no way to ask for the work area, so then stay
+        # floating (bordered, but the bar is never covered). The isfloating rule in
+        # ~/.config/dwm-titus/window-rules.toml covers that fallback too.
+        wx, wy, ww, wh = self._work_area()
+        if ww and self._can_place():
+            self.win.fullscreen()
+        elif ww:
+            self.win.set_default_size(ww, wh - BAR_H)
+        self._apply_css()
+        self._build_ui()
+        self.win.connect("map", self._on_map)
+        self.win.connect("close-request", lambda *_: self.quit())
+        self.win.set_visible(True)
+        if self.force_quit:
+            GLib.timeout_add(int(float(self.force_quit) * 1000), lambda: self.quit() or False)
+
+    def _bail(self, message):
+        win = Gtk.ApplicationWindow(application=self, title="Wallpaper")
+        win.set_default_size(460, 120)
+        win.set_child(Gtk.Label(label=message))
+        win.present()
+        GLib.timeout_add(2500, lambda: self.quit() or False)
+
+    def _apply_css(self):
+        c = self.colors
+        urgent = theme_urgent()
+        css = """
+        window { background-color: %(bg)s; }
+        .canvas { background-color: transparent; }
+        .wash { background-color: %(wash)s; }
+        .scrim { background-color: %(scrim)s; }
+        .dialog {
+            background-color: %(bg)s;
+            border: 1px solid %(accent)s;
+            padding: 18px;
+        }
+        .dialogmsg { color: %(fg)s; font-size: 14px; }
+        .dialogbtn {
+            color: %(fg)s;
+            background-color: transparent;
+            background-image: none;
+            border: 1px solid %(btnborder)s;
+            border-radius: 0;
+            padding: 0;
+            min-width: 86px;
+            min-height: 32px;
+            font-size: 10px;
+            box-shadow: none;
+        }
+        .dialogbtn.cancel.sel {
+            color: %(accent)s;
+            border-color: %(accent)s;
+            background-color: %(selectedbg)s;
+        }
+        .dialogbtn.delete {
+            color: %(fg)s;
+            border-color: %(urgentborder)s;
+        }
+        .dialogbtn.delete.sel {
+            color: %(urgent)s;
+            border-color: %(urgent)s;
+            background-color: %(urgentbg)s;
+        }
+        label.animtoggle {
+            color: %(togglefg)s;
+            background-color: %(togglebg)s;
+            border: 1px solid %(btnborder)s;
+            padding: 5px 10px;
+            font-size: 9px;
+            letter-spacing: 1px;
+        }
+        """ % {
+            "bg": c["bg"],
+            "fg": c["fg"],
+            "accent": c["border-color"],
+            # Omarchy used a full-screen background wash at 50% under the
+            # picker (image-picker `scrim-alpha`); without it the desktop
+            # behind the carousel stays at full brightness.
+            "wash": css_rgba(c["bg"], 0.5),
+            "scrim": css_rgba(c["bg"], 0.7),
+            "btnborder": css_rgba(c["fg"], 0.38),
+            "selectedbg": css_rgba(c["fg"], 0.08),
+            "urgent": urgent,
+            "urgentborder": css_rgba(urgent, 0.56),
+            "urgentbg": css_rgba(urgent, 0.22),
+            "togglefg": css_rgba(c["fg"], 0.72),
+            "togglebg": css_rgba(c["bg"], 0.55),
+        }
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css.encode())
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+    # ── UI ───────────────────────────────────────────────────────────────────
+    def _build_ui(self):
+        # Backdrop: the picture that is currently on the desktop. Omarchy's
+        # overlay is transparent, so the desktop shows through unchanged; on
+        # X11 without a compositor we paint that same wallpaper ourselves.
+        # It is the stage's first child, so every slice paints above it.
+        self.backdrop = Gtk.Picture()
+        self.backdrop.set_content_fit(Gtk.ContentFit.COVER)
+        self.backdrop.set_can_shrink(True)
+
+        # A flat 50% background wash over the backdrop, under every slice.
+        # Omarchy dims the whole display so the carousel is the only bright
+        # thing on screen; it is not interactive, clicks fall through.
+        self.wash = Gtk.Box()
+        self.wash.add_css_class("wash")
+        self.wash.set_can_target(False)
+
+        # Every card/slice is a real widget in a Gtk.Fixed: position and size are
+        # driven by the springs, and the paint order of the Fixed is the z-order
+        # of the carousel (farthest slice first, the selected card last).
+        self.canvas = Stage()
+        self.canvas.add_css_class("canvas")
+        self.canvas.set_overflow(Gtk.Overflow.HIDDEN)
+        self.canvas.connect("notify::width", self._on_stage_resize)
+        self.canvas.connect("notify::height", lambda *_: self._apply_geometry())
+        self.canvas.put(self.backdrop, 0, 0)
+        self.canvas.put(self.wash, 0, 0)
+
+        # An overlay for the two pieces of chrome that must never end up behind
+        # the cards: the animation toggle at the top and, above it, the delete
+        # confirmation. Keeping them out of the stage also keeps the stage's
+        # paint order untouched.
+        root = Gtk.Overlay()
+        root.set_child(self.canvas)
+
+        self.hud = Gtk.Fixed()
+        self.hud.set_can_target(False)
+        self.anim_btn = Gtk.Label(label=self._anim_text())
+        self.anim_btn.add_css_class("animtoggle")
+        self.anim_btn.set_can_target(False)   # clicks are hit-tested on the window
+        self.hud.put(self.anim_btn, 0, 20)
+        root.add_overlay(self.hud)
+
+        self._build_dialog()
+        root.add_overlay(self.dialog)
+
+        # Topmost: the apply transition paints over the cards, the toggle and
+        # the dialog scrim, so the only thing left at the end is the wallpaper.
+        self.apply_overlay = ApplyReveal(self)
+        self.apply_overlay.set_visible(False)
+        root.add_overlay(self.apply_overlay)
+
+        self.win.set_child(root)
+
+        if self._cursor_pointer is None:
+            self._cursor_pointer = Gdk.Cursor.new_from_name("pointer", None)
+        if self._cursor_default is None:
+            self._cursor_default = Gdk.Cursor.new_from_name("default", None)
+
+        # Controllers live on the window so they see clicks that land on a slice
+        # widget as well as on the empty backdrop; hit-testing decides the rest.
+        click = Gtk.GestureClick()
+        click.connect("pressed", self._on_pressed)
+        self.win.add_controller(click)
+
+        motion = Gtk.EventControllerMotion()
+        motion.connect("motion", self._on_motion)
+        motion.connect("leave", self._on_leave)
+        self.win.add_controller(motion)
+
+        keys = Gtk.EventControllerKey()
+        keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self._on_key)
+        self.win.add_controller(keys)
+
+        scroll = Gtk.EventControllerScroll()
+        scroll.set_flags(
+            Gtk.EventControllerScrollFlags.VERTICAL | Gtk.EventControllerScrollFlags.HORIZONTAL
+        )
+        scroll.connect("scroll", self._on_scroll)
+        self.win.add_controller(scroll)
+
+    def _build_dialog(self):
+        """Omarchy's ConfirmDialog.qml: scrim, centered card, Cancel/Delete."""
+        self.dialog = Gtk.CenterBox()
+        self.dialog.add_css_class("scrim")
+        self.dialog.set_visible(False)
+
+        self.dialog_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        self.dialog_card.add_css_class("dialog")
+        self.dialog_card.set_valign(Gtk.Align.CENTER)
+
+        self.dialog_msg = Gtk.Label()
+        self.dialog_msg.add_css_class("dialogmsg")
+        self.dialog_msg.set_wrap(True)
+        self.dialog_msg.set_xalign(0.0)
+        self.dialog_msg.set_halign(Gtk.Align.FILL)
+        # The card's width is fixed (370), so do not let a long file name
+        # inflate its natural width: the label wraps inside the allocation.
+        self.dialog_msg.set_max_width_chars(10)
+
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.set_halign(Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        confirm = Gtk.Button(label="Delete")
+        for button, kind in (
+            (cancel, "cancel"),
+            (confirm, "delete"),
+        ):
+            button.add_css_class("dialogbtn")
+            button.add_css_class(kind)
+            button.set_can_focus(False)
+            row.append(button)
+        cancel.connect("clicked", lambda *_: self._cancel_confirm())
+        confirm.connect("clicked", lambda *_: self.confirm_delete())
+        self.dialog_buttons = (cancel, confirm)
+
+        self.dialog_card.append(self.dialog_msg)
+        self.dialog_card.append(row)
+        self.dialog.set_center_widget(self.dialog_card)
+
+    # ── chrome: animation toggle + delete confirmation ───────────────────────
+    def _anim_text(self):
+        return "ANIMATION ON" if self.animations else "ANIMATION OFF"
+
+    def _place_hud(self, width):
+        if self.anim_btn is None or width < 16:
+            return
+        _, bw, _, _ = self.anim_btn.measure(Gtk.Orientation.HORIZONTAL, -1)
+        _, bh, _, _ = self.anim_btn.measure(Gtk.Orientation.VERTICAL, max(1, int(bw)))
+        bw, bh = int(round(bw)), int(round(bh))
+        x = int(round((width - bw) / 2.0))
+        self.hud.move(self.anim_btn, x, 20)
+        self._anim_rect = (x, 20, bw, bh)
+
+    def toggle_animations(self):
+        self.animations = not self.animations
+        save_animations(self.animations)
+        if self.anim_btn is not None:
+            self.anim_btn.set_text(self._anim_text())
+        if self.canvas is not None:
+            self._place_hud(self.canvas.get_width())
+        if not self.animations:
+            if self.tick_id and self.win:
+                self.win.remove_tick_callback(self.tick_id)
+                self.tick_id = 0
+            self.reveal = self.reveal_tgt = 1.0
+            self.reveal_vel = 0.0
+            self._snap()
+            self._apply_visuals()
+
+    def _layout_dialog(self, width):
+        if self.dialog_card is None:
+            return
+        card_w = max(240, min(370, int(width) - 32))
+        inner = card_w - 36 - 2     # 18px padding + 1px border per side
+        self.dialog_msg.set_size_request(inner, -1)
+        _, msg_h, _, _ = self.dialog_msg.measure(Gtk.Orientation.VERTICAL, inner)
+        self.dialog_card.set_size_request(
+            card_w, 2 * 18 + 2 + int(round(msg_h)) + 20 + 34
+        )
+
+    def _open_confirm(self):
+        if self.confirm_path is not None or not self.walls:
+            return
+        self.confirm_path = self.walls[self.idx]
+        self.confirm_error = ""
+        self.confirm_sel = 1
+        self._set_hover(None)
+        width = self.canvas.get_width() if self.canvas else 0
+        if width < 16:
+            width = self._monitor_size()[0]
+        self._sync_confirm()
+        self._layout_dialog(width)
+        if self.animations:
+            self.dialog_a = 0.0
+            self.dialog_a_vel = 0.0
+            self.dialog_a_tgt = 1.0
+            self.dialog.set_opacity(0.0)
+        else:
+            self.dialog_a = self.dialog_a_tgt = 1.0
+            self.dialog_a_vel = 0.0
+            self.dialog.set_opacity(1.0)
+        self.dialog.set_visible(True)
+        if self.animations:
+            self._start_anim()
+
+    def _cancel_confirm(self):
+        if self.confirm_path is None:
+            return
+        self.confirm_path = None
+        self.confirm_sel = 1
+        self.confirm_error = ""
+        self.dialog.set_visible(False)
+        self.dialog_a = self.dialog_a_tgt = 1.0
+        self.dialog_a_vel = 0.0
+        self.dialog.set_opacity(1.0)
+        if self.win is not None:
+            self.win.set_cursor(None)
+
+    def _sync_confirm(self):
+        if self.dialog_msg is None:
+            return
+        if self.confirm_error:
+            self.dialog_msg.set_text(self.confirm_error)
+        else:
+            name = os.path.basename(self.confirm_path or "")
+            self.dialog_msg.set_text("Delete \u201c%s\u201d?" % name)
+        for i, button in enumerate(self.dialog_buttons):
+            if i == self.confirm_sel:
+                button.add_css_class("sel")
+            else:
+                button.remove_css_class("sel")
+        if self.canvas is not None and self.canvas.get_width() >= 16:
+            self._layout_dialog(self.canvas.get_width())
+
+    def _activate_confirm(self):
+        if self.confirm_sel == 0:
+            self._cancel_confirm()
+        else:
+            self.confirm_delete()
+
+    @staticmethod
+    def _delete_file(path):
+        """Move to the trash when possible, otherwise unlink."""
+        if not os.path.lexists(path):   # already gone; treat as deleted
+            return
+        gio = shutil.which("gio")
+        if gio:
+            try:
+                done = subprocess.run(
+                    [gio, "trash", path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=30,
+                )
+                if done.returncode == 0 and not os.path.exists(path):
+                    return
+            except (OSError, subprocess.SubprocessError):
+                pass
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+
+    def confirm_delete(self):
+        path = self.confirm_path
+        if not path:
+            return
+        try:
+            self._delete_file(path)
+        except OSError as exc:
+            self.confirm_error = "Could not delete \u201c%s\u201d: %s" % (
+                os.path.basename(path), exc.strerror or exc
+            )
+            self.confirm_sel = 0
+            self._sync_confirm()
+            return
+
+        for kind in ("thumb", "preview"):
+            try:
+                os.unlink(cache_path(path, kind))
+            except OSError:
+                pass
+
+        self.confirm_path = None
+        self.confirm_error = ""
+        self.dialog.set_visible(False)
+        self.dialog_a = self.dialog_a_tgt = 1.0
+        self.dialog_a_vel = 0.0
+        self.dialog.set_opacity(1.0)
+        if self.win is not None:
+            self.win.set_cursor(None)
+
+        was_current = bool(self.current_wall) and (
+            os.path.abspath(path) == os.path.abspath(self.current_wall)
+        )
+        old_index = self.idx
+        self.walls = [w for w in self.walls if os.path.abspath(w) != os.path.abspath(path)]
+        self.thumbs.pop(path, None)
+        self.previews.pop(path, None)
+        self.textures.pop(path, None)
+        self.failed.discard(path)
+        self.preview_order = [p for p in self.preview_order if p != path]
+        for kind in ("slice", "card"):
+            self.tex.pop((path, kind), None)
+        self.tex_order = [key for key in self.tex_order if key[0] != path]
+
+        if not self.walls:
+            self.current_wall = None
+            self.quit()
+            return
+
+        self.idx = max(0, min(old_index, len(self.walls) - 1))
+        self.order = []
+        self._reset_springs()
+        self.current_wall = current_wallpaper()
+        self.refresh(animate=False)
+        if was_current:   # the desktop cannot keep pointing at a deleted file
+            self._run_apply(self.walls[self.idx])
+
+    def _on_map(self, *_):
+        self._fit_work_area()
+        self._layout()
+
+    def _work_area(self):
+        """(x, y, w, h) of the screen minus polybar's strip."""
+        display = Gdk.Display.get_default()
+        if display is not None:
+            mons = display.get_monitors()
+            if mons.get_n_items():
+                geo = mons.get_item(0).get_geometry()
+                if geo.width > 1 and geo.height > BAR_H:
+                    return 0, BAR_H, geo.width, geo.height - BAR_H
+        return 0, 0, 0, 0
+
+    @staticmethod
+    def _can_place():
+        """Can this window be placed by hand? That needs GdkX11 for the window id and
+        xdotool to pass the geometry to dwm."""
+        return GdkX11 is not None and shutil.which("xdotool") is not None
+
+    def _fit_work_area(self):
+        """Place the window on the work area now that dwm has mapped it.
+
+        The window is in dwm's fullscreen state (see do_activate), the one state
+        dwm makes borderless, so its content reaches the screen edges with no 1px
+        ring at all. dwm still honours a client's own geometry request while a
+        window is fullscreen and floating, so this call places the picker: the
+        bar's rows stay visible, the overlay runs edge to edge, and the frame
+        reaches 1px up over polybar's own border-bottom so that line does not read
+        as a border along the picker's top edge.
+        """
+        surface = self.win.get_surface()
+        if surface is None or not self._can_place():
+            return
+        wx, wy, ww, wh = self._work_area()
+        if not ww:
+            return
+        try:
+            with warnings.catch_warnings():   # get_xid is deprecated but the only way
+                warnings.simplefilter("ignore", DeprecationWarning)
+                xid = GdkX11.X11Surface.get_xid(surface)
+            subprocess.Popen(
+                ["xdotool", "windowsize", str(xid), str(ww), str(wh + 1),
+                 "windowmove", str(xid), str(wx), str(wy - 1)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except (GLib.Error, OSError):
+            pass
+
+    def _monitor_size(self):
+        """Size the layout is built for — the window is not resized yet when 'map'
+        fires, so its own width/height would give half-size panes."""
+        display = Gdk.Display.get_default()
+        mon = None
+        surface = self.win.get_surface()
+        if surface is not None:
+            mon = display.get_monitor_at_surface(surface)
+        if mon is None:
+            mons = display.get_monitors()
+            if mons.get_n_items():
+                mon = mons.get_item(0)
+        if mon is not None:
+            geo = mon.get_geometry()
+            if geo.width > 1 and geo.height > BAR_H:
+                # the window fills the monitor minus polybar's strip
+                return geo.width, geo.height - BAR_H
+        return max(1, self.win.get_width()), max(1, self.win.get_height())
+
+    def _reset_springs(self):
+        n = len(self.walls)
+        self.cur_w = [0.0] * n
+        self.cur_h = [0.0] * n
+        self.cur_s = [0.0] * n
+        self.vel_w = [0.0] * n
+        self.vel_h = [0.0] * n
+        self.vel_s = [0.0] * n
+        self.tgt_w = [0.0] * n
+        self.tgt_h = [0.0] * n
+        self.tgt_s = [0.0] * n
+        self.cur_hov = [0.0] * n
+        self.vel_hov = [0.0] * n
+        self.tgt_hov = [0.0] * n
+        self.hover_i = None
+
+    def _layout(self, *_):
+        w, _h = self._monitor_size()
+        self.radius = self._radius_for(w)
+        self._reset_springs()
+        GLib.idle_add(self._first_paint)
+        return False
+
+    def _first_paint(self):
+        # Reveal: the carousel fades and rises into place; the dim wash and
+        # the backdrop are already there so the desktop never flashes.
+        if self.animations:
+            self.reveal = 0.0
+            self.reveal_vel = 0.0
+            self.reveal_tgt = 1.0
+            if self.wash is not None:
+                self.wash.set_opacity(0.0)
+        else:
+            self.reveal = self.reveal_tgt = 1.0
+            self.reveal_vel = 0.0
+        self.refresh(animate=False)
+        if self.animations:
+            self._start_anim()
+        return False
+
+    # ── images ───────────────────────────────────────────────────────────────
+    def _remember_thumb(self, path):
+        if path in self.thumb_order:
+            self.thumb_order.remove(path)
+        self.thumb_order.append(path)
+        while len(self.thumb_order) > THUMB_KEEP:
+            old = self.thumb_order.pop(0)
+            self.thumbs.pop(old, None)
+
+    def _thumb(self, path, request=True):
+        # a miss is cached as well, so a broken or unbuildable image is not
+        # retried (with a fresh magick process) on every single refresh
+        if path in self.thumbs:
+            self._remember_thumb(path)
+            return self.thumbs[path]
+        dst = cache_path(path, "thumb")
+        if os.path.exists(dst):
+            pb = load_pixbuf(dst)
+            self.thumbs[path] = pb
+            self._remember_thumb(path)
+            return pb
+        if not self._has_magick():
+            src = load_pixbuf(path)
+            pb = cover_scale(src, 320, 180) if src is not None else None
+            self.thumbs[path] = pb
+            self._remember_thumb(path)
+            return pb
+        if request and path not in self.thumb_building and path not in self.thumb_queued:
+            self.thumb_queued.add(path)
+            self.thumb_queue.append(path)
+            self._pump_thumbs()
+        return None
+
+    @staticmethod
+    def _has_magick():
+        return bool(shutil.which("magick") or shutil.which("convert"))
+
+    def _pump_thumbs(self):
+        while self.thumb_queue and self.thumb_jobs < THUMB_JOBS:
+            path = self.thumb_queue.popleft()
+            self.thumb_queued.discard(path)
+            if path in self.thumbs or path in self.thumb_building:
+                continue
+            self.thumb_building.add(path)
+            self.thumb_jobs += 1
+            threading.Thread(target=self._build_thumb, args=(path,), daemon=True).start()
+
+    def _build_thumb(self, path):
+        dst = cache_path(path, "thumb")
+        ok = build_cache(path, dst, THUMB_SIZE) or os.path.exists(dst)
+        pb = load_pixbuf(dst) if ok else None
+        GLib.idle_add(self._thumb_ready, path, pb)
+
+    def _thumb_ready(self, path, pb):
+        self.thumb_building.discard(path)
+        self.thumb_jobs = max(0, self.thumb_jobs - 1)
+        self.thumbs[path] = pb
+        self._remember_thumb(path)
+        self._apply_visuals()
+        self._pump_thumbs()
+        return False
+
+    def _preview(self, path):
+        """(slice pixbuf, card pixbuf) already scaled to the size they are shown
+        at, or None while the preview is still being built."""
+        return self.previews.get(path)
+
+    def _remember_preview(self, path):
+        self.preview_order = [p for p in self.preview_order if p != path]
+        self.preview_order.append(path)
+        # keep everything that is on screen, then a little margin, so browsing
+        # never evicts a preview that is visible right now
+        cap = min(PREVIEW_KEEP_MAX, max(PREVIEW_KEEP, len(self._visible()) + 2))
+        while len(self.preview_order) > cap:
+            old = self.preview_order.pop(0)
+            self.previews.pop(old, None)
+            self.textures.pop(old, None)
+
+    def _request_preview(self, path):
+        """Queue the big card to be built off the main loop when a slot is free."""
+        if path in self.previews or path in self.building or path in self.failed:
+            return
+        if path not in self.queued:
+            self.queued.add(path)
+            self.queue.append(path)
+        self._pump_previews()
+
+    def _pump_previews(self):
+        """At most PREVIEW_JOBS magick processes at once — arrowing quickly used
+        to spawn one per image and the CPU contention showed up as stutter."""
+        while self.queue and self.inflight < PREVIEW_JOBS:
+            path = self.queue.popleft()
+            self.queued.discard(path)
+            if path in self.previews or path in self.building or path in self.failed:
+                continue
+            self.building.add(path)
+            self.inflight += 1
+            threading.Thread(target=self._build_preview, args=(path,), daemon=True).start()
+
+    def _build_preview(self, path):
+        dst = cache_path(path, "preview")
+        ok = build_cache(path, dst, PREVIEW_SIZE) or os.path.exists(dst)
+        pb = load_pixbuf(dst) if ok else None
+        slice_pb = card_pb = None
+        if pb is not None:
+            # Scaling is the expensive part: do it here, off the GUI thread, so
+            # browsing only ever uploads an already-sized texture.
+            slice_pb = cover_scale(pb, EXPANDED_W, SLICE_H)
+            card_pb = cover_scale(pb, EXPANDED_W, EXPANDED_H)
+        GLib.idle_add(self._preview_ready, path, pb, slice_pb, card_pb)
+
+    def _preview_ready(self, path, pb, slice_pb, card_pb):
+        self.building.discard(path)
+        self.inflight = max(0, self.inflight - 1)
+        if pb is None or slice_pb is None or card_pb is None:
+            self.failed.add(path)
+            self._pump_previews()
+            return False
+        self.previews[path] = (slice_pb, card_pb)
+        self._remember_preview(path)
+        # a thumbnail-quality texture must not stick around once the preview lands
+        for kind in ("slice", "card"):
+            self.tex.pop((path, kind), None)
+            try:
+                self.tex_order.remove((path, kind))
+            except ValueError:
+                pass
+        if self.current_wall and os.path.abspath(path) == os.path.abspath(self.current_wall):
+            self.backdrop_pb = pb
+            self._set_picture(self.backdrop, pb, path)
+        self._apply_visuals()
+        self._pump_previews()
+        return False
+
+    def _set_picture(self, picture, pb, key):
+        tex = self.textures.get(key)
+        if tex is None:
+            tex = pixbuf_texture(pb)
+            self.textures[key] = tex
+        picture.set_paintable(tex)
+
+    def _texture_for(self, path, kind):
+        """Texture for a slice or the big card, built on demand and size-bounded.
+
+        The heavy downscale already happened on the worker thread, so this only
+        uploads an already-sized pixbuf; a thumbnail is the only fallback.
+        """
+        key = (path, kind)
+        tex = self.tex.get(key)
+        if tex is not None:
+            if key in self.tex_order:
+                self.tex_order.remove(key)
+            self.tex_order.append(key)
+            return tex
+        entry = self._preview(path)
+        if entry is not None:
+            pb = entry[0] if kind == "slice" else entry[1]
+        else:
+            pb = self._thumb(path)
+            if pb is None:
+                return None
+            target = (EXPANDED_W, SLICE_H) if kind == "slice" else (EXPANDED_W, EXPANDED_H)
+            pb = cover_scale(pb, *target)
+        tex = pixbuf_texture(pb)
+        self.tex[key] = tex
+        self.tex_order.append(key)
+        cap = min(TEX_KEEP_MAX, max(TEX_KEEP, len(self._visible()) + 4))
+        while len(self.tex_order) > cap:
+            old = self.tex_order.pop(0)
+            self.tex.pop(old, None)
+        return tex
+
+    # ── widgets ──────────────────────────────────────────────────────────────
+    def _ensure_item(self, i):
+        card = self.items.get(i)
+        if card is not None:
+            return card
+        card = Card(self)
+        self.items[i] = card
+        card.set_opacity(self.reveal)
+        self.canvas.put(card, 0, 0)
+        return card
+
+    def _visible(self):
+        lo = max(0, self.idx - self.radius)
+        hi = min(len(self.walls) - 1, self.idx + self.radius)
+        return list(range(lo, hi + 1))
+
+    def _sync_items(self):
+        """Create/destroy slice widgets and restack them so the card is on top."""
+        want = self._visible()
+        wanted = set(want)
+        for i in list(self.items):
+            if i not in wanted:
+                widget = self.items.pop(i)
+                self._geom.pop(i, None)
+                self.canvas.remove(widget)
+
+        # Omarchy: z = 100 for the card, else 50 - min(|relative|, 40); paint
+        # farthest slice first, closest slice last, then the card on top.
+        order = sorted(want, key=lambda i: (1 if i == self.idx else 0, -abs(i - self.idx)))
+        if order != self.order:
+            for i in order:
+                widget = self._ensure_item(i)
+                if widget.get_parent() is self.canvas:
+                    self.canvas.remove(widget)
+            for i in order:
+                # put() resets a fixed child to (0, 0), so the cached rect is
+                # stale even when the spring target has not changed
+                self._geom.pop(i, None)
+                self.canvas.put(self.items[i], 0, 0)
+            self.order = order
+        else:
+            for i in order:
+                self._ensure_item(i)
+
+    def _item_rect(self, i, width, height):
+        """x, y, w, h of item i at the current sprung sizes (Omarchy layout)."""
+        cw = self.cur_w[i]
+        ch = self.cur_h[i]
+        sel_w = self.cur_w[self.idx]
+        sel_x = (width - sel_w) / 2.0
+        rel = i - self.idx
+        if rel < 0:
+            x = sel_x + rel * SLICE_STEP
+        elif rel == 0:
+            x = sel_x
+        else:
+            x = sel_x + sel_w + SLICE_SPACING + (rel - 1) * SLICE_STEP
+        y = (height - ch) / 2.0 + (1.0 - self.reveal) * REVEAL_RISE
+        return x, y, cw, ch
+
+    def _on_stage_resize(self, *_):
+        """The window moved/resized: keep the carousel centred on it."""
+        width = self.canvas.get_width()
+        radius = self._radius_for(width)
+        if radius != self.radius:
+            self.radius = radius
+            self._sync_items()
+        self._apply_geometry()
+
+    @staticmethod
+    def _radius_for(width):
+        # Omarchy renders only what fits on the display. The card is centred and
+        # item k sits k * SLICE_STEP away from it, so the outermost slice on
+        # each side stays fully on screen while
+        #     k <= (width - EXPANDED_W) / (2 * SLICE_STEP).
+        # Keep one extra slot out: neighbours are never cut off by the edges.
+        if width <= EXPANDED_W:
+            return 0
+        return max(0, min(16, (width - EXPANDED_W) // (2 * SLICE_STEP)))
+
+    def _apply_geometry(self):
+        if self.canvas is None:
+            return
+        width = self.canvas.get_width()
+        height = self.canvas.get_height()
+        if width < 16 or height < 16 or not self.walls:
+            return
+        if self._geom.get(-1) != (width, height):
+            self._geom[-1] = (width, height)
+            self.backdrop.set_size_request(width, height)
+            self.wash.set_size_request(width, height)
+            self._place_hud(width)
+            if self.dialog is not None and self.dialog.get_visible():
+                self._layout_dialog(width)
+        for i in self.order:
+            widget = self.items.get(i)
+            if widget is None:
+                continue
+            x, y, w, h = self._item_rect(i, width, height)
+            rect = (int(round(x)), int(round(y)),
+                    max(1, int(round(w))), max(1, int(round(h))))
+            if self._geom.get(i) != rect:   # only touch GTK when something moved
+                self._geom[i] = rect
+                widget.set_size_request(rect[2], rect[3])
+                self.canvas.move(widget, rect[0], rect[1])
+        alpha = 1.0 if self.reveal >= 0.999 else self.reveal
+        if self._geom.get(-2) != alpha:
+            self._geom[-2] = alpha
+            for i in self.order:
+                widget = self.items.get(i)
+                if widget is not None:
+                    widget.set_opacity(alpha)
+            if self.wash is not None:
+                self.wash.set_opacity(alpha)
+
+    def _apply_visuals(self):
+        """Texture + selected/unselected styling; cheap enough to call often."""
+        if self.canvas is None:
+            return
+        for i in self.order:
+            card = self.items.get(i)
+            if card is None:
+                continue
+            selected = i == self.idx
+            texture = self._texture_for(self.walls[i], "card" if selected else "slice")
+            hover = self.cur_hov[i] if i < len(self.cur_hov) else 0.0
+            dim = (
+                0.0 if selected
+                else DIM_ALPHA * (1.0 - self.cur_s[i]) * (1.0 - HOVER_LIFT * hover)
+            )
+            sel = self.cur_s[i]
+            if (
+                card.texture is not texture
+                or abs(card.sel - sel) > 0.001
+                or abs(card.dim - dim) > 0.001
+            ):
+                card.texture = texture
+                card.sel = sel
+                card.dim = dim
+                card.queue_draw()
+        self._apply_geometry()
+
+    # ── rendering / animation ────────────────────────────────────────────────
+    def refresh(self, animate=True):
+        path = self.walls[self.idx]
+        self._request_preview(path)
+        if self.current_wall:
+            self._request_preview(self.current_wall)   # the backdrop needs it too
+        for i in self._visible():
+            self._request_preview(self.walls[i])
+
+        # Backdrop stays the desktop's current wallpaper while browsing, like
+        # Omarchy's transparent overlay — not the card under the cursor.
+        bpath = self.current_wall or path
+        if self.backdrop_pb is not None and self.current_wall:
+            self._set_picture(self.backdrop, self.backdrop_pb, bpath)
+        else:
+            bpb = self._thumb(bpath)
+            if bpb is not None:
+                self._set_picture(self.backdrop, bpb, "t:" + bpath)
+
+        self._sync_items()
+        self._set_targets()
+        if animate and self.animations:
+            self._start_anim()
+        else:
+            self._snap()
+        self._apply_visuals()
+
+    def _set_targets(self):
+        for j in range(len(self.walls)):
+            sel = j == self.idx
+            self.tgt_w[j] = float(EXPANDED_W if sel else SLICE_W)
+            self.tgt_h[j] = float(EXPANDED_H if sel else SLICE_H)
+            self.tgt_s[j] = 1.0 if sel else 0.0
+
+    def _snap(self):
+        for j in range(len(self.walls)):
+            self.cur_w[j] = self.tgt_w[j]
+            self.cur_h[j] = self.tgt_h[j]
+            self.cur_s[j] = self.tgt_s[j]
+            self.cur_hov[j] = self.tgt_hov[j]
+            self.vel_w[j] = self.vel_h[j] = self.vel_s[j] = 0.0
+            self.vel_hov[j] = 0.0
+        if self.dialog is not None:
+            self.dialog_a = self.dialog_a_tgt = 1.0
+            self.dialog_a_vel = 0.0
+            self.dialog.set_opacity(1.0)
+        self._apply_geometry()
+
+    def _start_anim(self):
+        if self.tick_id or not self.win:
+            return
+        self.last_frame = 0
+        self.tick_id = self.win.add_tick_callback(self._animate)
+
+    def _animate(self, _widget, clock):
+        now = clock.get_frame_time()
+        dt = min(0.05, (now - self.last_frame) / 1e6) if self.last_frame else 1 / 60
+        self.last_frame = now
+        settled = True
+        for j in range(len(self.walls)):
+            for cur, vel, tgt in (
+                (self.cur_w, self.vel_w, self.tgt_w),
+                (self.cur_h, self.vel_h, self.tgt_h),
+                (self.cur_s, self.vel_s, self.tgt_s),
+                (self.cur_hov, self.vel_hov, self.tgt_hov),
+            ):
+                x, v = spring(cur[j], vel[j], tgt[j], dt)
+                eps = 0.002 if tgt is self.tgt_hov else 0.4
+                veps = 0.02 if tgt is self.tgt_hov else 4.0
+                if abs(tgt[j] - x) < eps and abs(v) < veps:
+                    x, v = tgt[j], 0.0
+                else:
+                    settled = False
+                cur[j], vel[j] = x, v
+        x, v = spring(self.reveal, self.reveal_vel, self.reveal_tgt, dt)
+        if abs(self.reveal_tgt - x) < 0.002 and abs(v) < 0.02:
+            x, v = self.reveal_tgt, 0.0
+        else:
+            settled = False
+        self.reveal, self.reveal_vel = x, v
+        x, v = spring(self.dialog_a, self.dialog_a_vel, self.dialog_a_tgt, dt)
+        if abs(self.dialog_a_tgt - x) < 0.002 and abs(v) < 0.02:
+            x, v = self.dialog_a_tgt, 0.0
+        else:
+            settled = False
+        self.dialog_a, self.dialog_a_vel = x, v
+        if self.dialog is not None and self.dialog.get_visible():
+            self.dialog.set_opacity(self.dialog_a)
+        if self.applying:
+            if self.apply_t0 is None:
+                self.apply_t0 = now
+            p = min(1.0, (now - self.apply_t0) / (APPLY_MS * 1000.0))
+            eased = 1.0 - (1.0 - p) ** 3          # Easing.OutCubic
+            if eased != self.apply_p:
+                self.apply_p = eased
+                if self.apply_overlay is not None:
+                    self.apply_overlay.progress = eased
+                    self.apply_overlay.queue_draw()
+            settled = False
+            # The desktop is only safe to uncover once feh has put the new
+            # wallpaper on the root window; the band already covers the screen.
+            if p >= 1.0 and (
+                self.apply_proc is None or self.apply_proc.poll() is not None
+            ):
+                self._end_apply()
+                return False
+        self._apply_visuals()
+        if settled:
+            self.tick_id = 0
+            return False
+        return True
+
+    # ── input ────────────────────────────────────────────────────────────────
+    def move(self, delta):
+        new = max(0, min(len(self.walls) - 1, self.idx + delta))
+        if new != self.idx:
+            self.idx = new
+            self.refresh()
+
+    def _hit_test(self, mx, my):
+        width = self.canvas.get_width()
+        height = self.canvas.get_height()
+        # topmost first: selected, then nearest neighbours, then farther ones
+        order = sorted(
+            range(len(self.walls)),
+            key=lambda i: (0 if i == self.idx else 1, abs(i - self.idx)),
+        )
+        for i in order:
+            if abs(i - self.idx) > self.radius:
+                continue
+            x, y, w, h = self._item_rect(i, width, height)
+            if x <= mx <= x + w and y <= my <= y + h:
+                return i
+        return None
+
+    def _on_motion(self, _controller, x, y):
+        if self.applying:
+            if self.win is not None:
+                self.win.set_cursor(self._cursor_default)
+            return
+        if self.confirm_path is not None:
+            index = self._confirm_button_at(x, y)
+            if index is not None and index != self.confirm_sel:
+                self.confirm_sel = index
+                self._sync_confirm()
+            self.win.set_cursor(
+                self._cursor_pointer if index is not None else self._cursor_default
+            )
+            return
+        if self._inside(self._anim_rect, x, y):
+            self._set_hover(None)
+            self.win.set_cursor(self._cursor_pointer)
+            return
+        self.win.set_cursor(None)   # fall back to the slice/backdrop cursors
+        hit = self._hit_test(x, y)
+        # slices carry the pointer cursor themselves; only the empty backdrop
+        # needs the default one
+        self.canvas.set_cursor(self._cursor_pointer if hit is not None else self._cursor_default)
+        self._set_hover(hit if hit != self.idx else None)
+
+    def _on_leave(self, _controller):
+        self._set_hover(None)
+
+    def _set_hover(self, index):
+        """Brighten the slice under the pointer with the same spring as motion."""
+        index = index if index is not None else None
+        if index == self.hover_i:
+            return
+        self.hover_i = index
+        for j in range(len(self.walls)):
+            self.tgt_hov[j] = 1.0 if j == index else 0.0
+        if self.animations:
+            self._start_anim()
+        else:
+            for j in range(len(self.walls)):
+                self.cur_hov[j] = self.tgt_hov[j]
+                self.vel_hov[j] = 0.0
+            self._apply_visuals()
+
+    @staticmethod
+    def _inside(rect, x, y):
+        return (
+            rect is not None
+            and rect[0] <= x <= rect[0] + rect[2]
+            and rect[1] <= y <= rect[1] + rect[3]
+        )
+
+    def _confirm_button_at(self, x, y):
+        for index, button in enumerate(self.dialog_buttons or ()):
+            ok, rect = button.compute_bounds(self.win)
+            if not ok:
+                continue
+            if (
+                rect.origin.x <= x <= rect.origin.x + rect.size.width
+                and rect.origin.y <= y <= rect.origin.y + rect.size.height
+            ):
+                return index
+        return None
+
+    def _on_pressed(self, gesture, _n_press, x, y):
+        if self.applying:
+            return
+        if gesture.get_current_button() != 1:
+            return
+        if self.confirm_path is not None:
+            ok, rect = self.dialog_card.compute_bounds(self.win)
+            inside = ok and (
+                rect.origin.x <= x <= rect.origin.x + rect.size.width
+                and rect.origin.y <= y <= rect.origin.y + rect.size.height
+            )
+            if not inside:      # clicking the scrim cancels, like Omarchy
+                self._cancel_confirm()
+            # clicks on the buttons are handled by the Gtk.Buttons themselves
+            return
+        if self._inside(self._anim_rect, x, y):
+            self.toggle_animations()
+            return
+        hit = self._hit_test(x, y)
+        if hit is None:
+            self.quit()
+        elif hit == self.idx:
+            self.apply()
+        else:
+            self.idx = hit
+            self._set_hover(None)
+            self.refresh()
+
+    def _on_key(self, _c, keyval, _code, state):
+        if self.applying:
+            return True
+        if self.confirm_path is not None:
+            if keyval == Gdk.KEY_Escape:
+                self._cancel_confirm()
+            elif keyval in (
+                Gdk.KEY_Left, Gdk.KEY_Right, Gdk.KEY_h, Gdk.KEY_l,
+                Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab,
+            ):
+                self.confirm_sel = 0 if self.confirm_sel else 1
+                self._sync_confirm()
+            elif keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+                self._activate_confirm()
+            return True
+        if keyval in (Gdk.KEY_Escape, Gdk.KEY_q):
+            self.quit()
+        elif keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space):
+            self.apply()
+        elif keyval in (Gdk.KEY_Left, Gdk.KEY_h, Gdk.KEY_k, Gdk.KEY_Up):
+            self.move(-1)
+        elif keyval in (Gdk.KEY_Right, Gdk.KEY_l, Gdk.KEY_j, Gdk.KEY_Down):
+            self.move(1)
+        elif keyval == Gdk.KEY_Home:
+            self.idx = 0
+            self.refresh()
+        elif keyval == Gdk.KEY_End:
+            self.idx = len(self.walls) - 1
+            self.refresh()
+        elif keyval == Gdk.KEY_Page_Up:
+            self.move(-5)
+        elif keyval == Gdk.KEY_Page_Down:
+            self.move(5)
+        elif keyval == Gdk.KEY_Delete:
+            self._open_confirm()
+        elif keyval == Gdk.KEY_a:
+            self.toggle_animations()
+        elif keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
+            # same hand-over the grid picker's "⊞ Filmstrip" button does, the
+            # other way round
+            self.switch_to_grid()
+        else:
+            return False
+        return True
+
+    def _on_scroll(self, _c, dx, dy):
+        if self.applying or self.confirm_path is not None:   # modal
+            return True
+        if dy:
+            self.move(-1 if dy < 0 else 1)
+        elif dx:
+            self.move(-1 if dx < 0 else 1)
+        return True
+
+    # ── apply ────────────────────────────────────────────────────────────────
+    def switch_to_grid(self):
+        """Hand back to the rofi grid picker (its own button comes here)."""
+        if os.access(PICKER, os.X_OK):
+            try:
+                subprocess.Popen(
+                    [PICKER],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except OSError:
+                pass
+        self.quit()
+
+    def _run_apply(self, path):
+        proc = None
+        if os.access(APPLY, os.X_OK):
+            try:
+                proc = subprocess.Popen(
+                    [APPLY, path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except OSError:
+                pass
+        else:  # last resort: no helper installed, set the picture directly
+            try:
+                proc = subprocess.Popen(
+                    ["feh", "--bg-fill", path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except OSError:
+                pass
+        return proc
+
+    def _end_apply(self):
+        # Leave the overlay in place: the window is torn down next, and hiding
+        # it first could flash one frame of the outgoing wallpaper.
+        self.apply_proc = None
+        self.quit()
+
+    def apply(self):
+        if self.applying:
+            return
+        path = self.walls[self.idx]
+        # With animations off (or no cached preview to reveal) keep the old
+        # instant hand-off. Otherwise play Omarchy's slanted curtain over the
+        # outgoing wallpaper and close only when feh has caught up.
+        texture = None
+        if self.animations:
+            cached = cache_path(path, "preview")
+            if os.path.isfile(cached):
+                try:
+                    texture = Gdk.Texture.new_from_filename(cached)
+                except (GLib.Error, OSError):
+                    texture = None
+        if texture is None or self.apply_overlay is None:
+            self._run_apply(path)
+            self.quit()
+            return
+
+        self.applying = True
+        self.apply_p = 0.0
+        self.apply_t0 = None
+        self.apply_overlay.texture = texture
+        self.apply_overlay.progress = 0.0
+        self.apply_overlay.queue_draw()
+        self.apply_overlay.set_visible(True)
+        if self.hud is not None:
+            self.hud.set_visible(False)
+        if self.win is not None:
+            self.win.set_cursor(self._cursor_default)
+        self.apply_proc = self._run_apply(path)
+        # Fade the picker out underneath the band. The old wallpaper is the
+        # backdrop and stays at full brightness, like Omarchy's outgoing frame.
+        self.reveal_tgt = 0.0
+        self._start_anim()
+
+
+def main():
+    app = Carousel()
+    return app.run([])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

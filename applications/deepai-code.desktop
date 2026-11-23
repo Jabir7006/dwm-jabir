@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=DeepAI Code
+Exec=/home/jabir/Applications/DeepAI-Code-0.3.43-x86_64.AppImage %U
+Terminal=false
+Icon=/home/jabir/.local/share/cachyos-pi/appimage-icons/deepai-code.png
+StartupWMClass=deepai-code
+X-AppImage-Version=0.3.43
+Comment=DeepAI Code is a desktop app for coding agents. Work with DeepAI or your existing provider connections, review code changes, and run commands in your projects.
+MimeType=x-scheme-handler/deepai-code;x-scheme-handler/deepai-code-dev;
+Categories=Development;
+X-CachyOS-PI-AppImage=/home/jabir/Applications/DeepAI-Code-0.3.43-x86_64.AppImage

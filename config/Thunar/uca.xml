@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+<action>
+	<icon>folder-copy</icon>
+	<name>Copy File Names</name>
+	<submenu></submenu>
+	<unique-id>1790530178287558-1</unique-id>
+	<command>basename -a %F | xclip -selection clipboard</command>
+	<description></description>
+	<range>*</range>
+	<patterns>*</patterns>
+	<directories/>
+	<audio-files/>
+	<image-files/>
+	<other-files/>
+	<text-files/>
+	<video-files/>
+</action>
+<action>
+	<icon>utilities-terminal</icon>
+	<name>Open Terminal Here</name>
+	<submenu></submenu>
+	<unique-id>1779773448032003-1</unique-id>
+	<command>exo-open --working-directory %f --launch TerminalEmulator</command>
+	<description>Example for a custom action</description>
+	<range></range>
+	<patterns>*</patterns>
+	<startup-notify/>
+	<directories/>
+</action>
+<action>
+	<icon>localsend</icon>
+	<name>LocalSend</name>
+	<submenu></submenu>
+	<unique-id>1791617747667757-1</unique-id>
+	<command>localsend %F</command>
+	<description>Send selected files/folders with LocalSend</description>
+	<range>*</range>
+	<patterns>*</patterns>
+	<startup-notify/>
+	<directories/>
+	<audio-files/>
+	<image-files/>
+	<other-files/>
+	<text-files/>
+	<video-files/>
+</action>
+<action>
+	<icon>nectarlink</icon>
+	<name>Send to Phh-Treble vanilla (NectarLink)</name>
+	<submenu></submenu>
+	<unique-id>nectarlink-send-3sht1x7j8f3kwi7qqf681c957ns18qzzkw1cxiqfhx416wiage7o</unique-id>
+	<command>&apos;/usr/lib/nectarlink/nectarlink-desktop&apos; --send-to 3sht1x7j8f3kwi7qqf681c957ns18qzzkw1cxiqfhx416wiage7o %F</command>
+	<description>Send to Phh-Treble vanilla with NectarLink</description>
+	<range></range>
+	<patterns>*</patterns>
+	<directories/>
+	<audio-files/>
+	<image-files/>
+	<other-files/>
+	<text-files/>
+	<video-files/>
+</action>
+</actions>

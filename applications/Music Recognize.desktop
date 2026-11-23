@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=Music Recognize
+Comment=Music Recognize
+Exec=app-manager --run-tui "TUI.float" /home/jabir/custom-scripts/music_recognition.py
+Terminal=false
+Type=Application
+Icon=utilities-terminal
+StartupNotify=true

@@ -1,0 +1,22 @@
+background = 2C2525
+foreground = E6D9DB
+cursor-color = E6D9DB
+selection-background = 403E41
+selection-foreground = E6D9DB
+
+palette = 0=2C2525
+palette = 1=FD6883
+palette = 2=ADDA78
+palette = 3=F9CC6C
+palette = 4=F38D70
+palette = 5=A8A9EB
+palette = 6=85DACC
+palette = 7=E6D9DB
+palette = 8=72696A
+palette = 9=FF8297
+palette = 10=C8E292
+palette = 11=FCD675
+palette = 12=F8A788
+palette = 13=BEBFFD
+palette = 14=9BF1E1
+palette = 15=E6D9DB

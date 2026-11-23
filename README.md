@@ -10,6 +10,10 @@
 
 This is a **heavily modified** version of dwm based on the original [suckless.org](https://dwm.suckless.org/) dwm. It includes numerous patches and customizations for a productive, user-friendly desktop on Arch Linux with Xorg.
 
+> **This fork (`dwm-jabir`) ships a full preconfigured desktop.**
+> Fresh Arch/CachyOS install → `./install.sh` → your whole DWM setup back.
+> See **[INSTALL.md](INSTALL.md)**.
+
 ### Patches & Features
 
 - **Polybar** integration (replaces dwm built-in bar)
