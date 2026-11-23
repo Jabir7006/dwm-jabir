@@ -1,5 +1,6 @@
 # ─────────────────────────────────────────────────────────────
-# X server — install.sh জিজ্ঞেস করবে কোনটা।
-# ডিফল্ট: xlibre (আপনার এখনকার setup)
+# Optional XLibre server — select it in install.sh (new installs default to Xorg).
+# Install the server and libinput driver without the legacy-driver meta package.
 # ─────────────────────────────────────────────────────────────
-xlibre-meta
+xlibre-xserver
+xlibre-input-libinput

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════
-#  install-apps.sh — optional apps (core-এর বাইরে)
-#  চালান:  ./install-apps.sh
-#  ব্যর্থ প্যাকেজগুলো শেষে তালিকা করে দেবে।
+#  install-apps.sh — optional apps (beyond the core desktop)
+#  Run:  ./install-apps.sh
+#  Failed packages are listed at the end.
 # ═══════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
@@ -15,8 +15,8 @@ ok()   { printf '%s[ OK ]%s %s\n' "$GREEN" "$NC" "$*"; }
 warn() { printf '%s[WARN]%s %s\n' "$YELLOW" "$NC" "$*"; }
 err()  { printf '%s[FAIL]%s %s\n' "$RED" "$NC" "$*" >&2; }
 
-[[ $EUID -eq 0 ]] && { err "root হিসেবে চালাবেন না"; exit 1; }
-command -v pacman >/dev/null 2>&1 || { err "pacman নেই — Arch/CachyOS লাগবে"; exit 1; }
+[[ $EUID -eq 0 ]] && { err "Do not run as root"; exit 1; }
+command -v pacman >/dev/null 2>&1 || { err "pacman is missing; Arch/CachyOS is required."; exit 1; }
 
 read_list() {
   local f="$1"
@@ -46,7 +46,7 @@ mapfile -t OFF < <(filter_skips $(read_list "$REPO_DIR/packages/apps-official.tx
 if ((${#OFF[@]})); then
   info "official apps (${#OFF[@]})..."
   if ! sudo pacman -S --needed --noconfirm "${OFF[@]}"; then
-    warn "batch install ব্যর্থ — একটা একটা করে চেষ্টা করছি"
+    warn "Batch installation failed; retrying packages individually."
     for p in "${OFF[@]}"; do
       sudo pacman -S --needed --noconfirm "$p" || FAILED+=("$p")
     done
@@ -58,12 +58,12 @@ mapfile -t AUR < <(filter_skips $(read_list "$REPO_DIR/packages/apps-aur.txt"))
 if ((${#AUR[@]})); then
   HELPER="$(find_helper)"
   if [[ -z "$HELPER" ]]; then
-    err "paru/yay নেই — আগে ./install.sh চালান (helper install হবে)"
+    err "paru/yay is missing; run ./install.sh first to install an AUR helper."
     exit 1
   fi
   info "AUR apps (${#AUR[@]}) via $HELPER..."
   if ! "$HELPER" -S --needed --noconfirm "${AUR[@]}"; then
-    warn "batch install ব্যর্থ — একটা একটা করে চেষ্টা করছি"
+    warn "Batch installation failed; retrying packages individually."
     for p in "${AUR[@]}"; do
       "$HELPER" -S --needed --noconfirm "$p" || FAILED+=("$p")
     done
@@ -72,10 +72,10 @@ fi
 
 echo ""
 if ((${#FAILED[@]})); then
-  warn "এই প্যাকেজগুলো install হয়নি:"
+  warn "These packages were not installed:"
   printf '  - %s\n' "${FAILED[@]}"
   echo ""
-  echo "কারণ হতে পারে: প্যাকেজ নাম বদলেছে, repo নেই, বা build dependency missing।"
+  echo "Possible causes: renamed packages, missing repositories, or missing build dependencies."
   exit 1
 fi
-ok "সব optional app install হয়েছে।"
+ok "All optional apps are installed."

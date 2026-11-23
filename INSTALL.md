@@ -44,15 +44,21 @@ cd ~/dwm-jabir
 
 | প্রশ্ন | ডিফল্ট | মানে |
 |---|---|---|
-| সিস্টেম update করব? | yes | `pacman -Syu` |
-| Xlibre ব্যবহার করবেন? | yes | না বললে `xorg-server` |
-| CachyOS kernel? | no | plain Arch-এ CachyOS kernel (repo/keyring দরকার) |
+| CachyOS kernel + optimized repos? (প্রথম প্রশ্ন) | Arch: no, CachyOS: yes | keyring আগে প্রস্তুত করে CPU-সমর্থিত repo Arch repo-র উপরে বসায় |
+| XLibre instead of Xorg? | no | নতুন install-এ Xorg; আগে থেকে XLibre থাকলে সেটি রাখে |
+| সিস্টেম update করব? | yes | `pacman -Syu`; repo প্রস্তুত/পরিবর্তন হলে update বাধ্যতামূলক |
 | paru নাকি yay-bin? | paru | AUR helper না থাকলে |
 | Touchpad config? | no | tapping, natural scroll, left-handed mouse |
 | keyd keyboard remap? | no | আপনার custom key layout |
 | System tuning? | no | sysctl, zram, udev, Intel i915/tearfree |
 | fish default shell? | yes | `chsh -s /usr/bin/fish` |
 | থিম apply করব? | yes | rofi/polybar/gtk/qt colors regenerate |
+
+স্ক্রিপ্টের সব prompt ও message ইংরেজিতে। CachyOS বেছে নিলে kernel এবং
+desktop package install-এর আগে signing key, keyring ও mirrorlist প্রস্তুত হয়।
+CPU অনুযায়ী generic, v3, v4 বা (শনাক্ত হলে) Zen 4/5 repo অগ্রাধিকার পায়।
+CachyOS repo-তে পাওয়া package সেখান থেকে আসে; বাকিগুলো Arch/AUR থেকে আসে।
+Repo bootstrap বা system upgrade ব্যর্থ হলে installer থামে।
 
 ---
 
@@ -61,7 +67,7 @@ cd ~/dwm-jabir
 পুরো লিস্ট: `packages/core-official.txt` + `packages/core-aur.txt`
 
 - **DWM build:** base-devel, libx11, libxft, libxinerama, imlib2, libxcb, xcb-util
-- **X:** xlibre-meta (বা xorg-server), xorg-xinit/xrandr/xsetroot/xset/xprop/xrdb
+- **X:** xorg-server + xf86-input-libinput (অথবা xlibre-xserver + xlibre-input-libinput), xorg-xinit/xrandr/xsetroot/xset/xprop/xrdb
 - **Desktop:** polybar, rofi, dunst, feh, flameshot, dex, mate-polkit, clipmenu
 - **Files:** thunar, gvfs, tumbler, thunar-archive-plugin, xarchiver
 - **Theming:** nwg-look, qt6ct, dconf, papirus-icon-theme, matugen
@@ -144,10 +150,19 @@ sudo systemctl disable --now keyd
 ```
 
 **Xlibre repo signature error**
-```bash
-sudo pacman -Sy archlinux-keyring
-sudo pacman -S xlibre-meta
-```
+- `./install.sh` আবার চালান; installer XLibre-এর নিজস্ব signing key trust করে
+  তারপর repo sync করে। `archlinux-keyring` একা এই third-party key দেয় না।
+- Xorg থেকে XLibre বেছে নিলে pacman-এর package replacement prompt confirm করুন।
+
+**CachyOS package signature error**
+- `./install.sh` চালিয়ে প্রথম prompt-এ CachyOS বেছে নিন। Installer CachyOS
+  signing key trust করে signed keyring/mirrorlist install করে, তারপর full update করে।
+- system clock ও ইন্টারনেট ঠিক আছে কি দেখুন। Signature checking বন্ধ করবেন না।
+
+**Cannot create `~/.local/bin`: Permission denied**
+- Installer তার ব্যবহৃত home directory ও deployment file-গুলো আগে থেকে
+  root-owned থাকলে ownership ঠিক করে। `make install`-ও নতুন parent directory-র
+  ownership user-কে দেয়। নিজের user দিয়ে `./install.sh` চালান।
 
 **CachyOS kernel boot entry নেই**
 - `sudo mkinitcpio -P`

@@ -98,6 +98,9 @@ install: all
 	fi
 	fc-cache -f >/dev/null 2>&1 || true
 	@echo "==> Fixing ownership and permissions..."
+	for dir in "${USER_HOME}/.local" "${USER_HOME}/.local/share" "${CFG_DIR}"; do \
+		if [ "$$(stat -c %u "$$dir")" = 0 ]; then chown ${OWNER}: "$$dir"; fi; \
+	done
 	find ${DATA_DIR} -name '*.sh' -o -name '*.py' | xargs -r chmod +x
 	for dir in config/*/; do \
 		b=$$(basename $$dir); \

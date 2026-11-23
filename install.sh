@@ -3,11 +3,11 @@
 #  dwm-jabir installer
 #  minimal Arch / CachyOS → preconfigured DWM desktop
 #
-#  ব্যবহার:
-#    ./install.sh                 # core install (prompt সহ)
-#    ./install.sh --with-apps     # core + আপনার সব অ্যাপ
-#    ./install.sh --no-deps       # package install বাদ, শুধু config/dwm
-#    ./install.sh -y              # সব prompt-এ default উত্তর
+#  Usage:
+#    ./install.sh                 # core install (interactive)
+#    ./install.sh --with-apps     # core + optional apps
+#    ./install.sh --no-deps       # skip packages, deploy config/dwm only
+#    ./install.sh -y              # use the default answer for every prompt
 # ═══════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
@@ -25,28 +25,33 @@ warn() { printf '%s[WARN]%s %s\n' "$YELLOW" "$NC" "$*"; }
 err()  { printf '%s[FAIL]%s %s\n' "$RED" "$NC" "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
-trap 's=$?; err "ব্যর্থ (line $LINENO, exit $s): $BASH_COMMAND"; exit $s' ERR
+trap 's=$?; err "Failed (line $LINENO, exit $s): $BASH_COMMAND"; exit $s' ERR
 
 WITH_APPS=0
 NO_DEPS=0
 ASSUME_YES=0
 DEPLOY_ONLY=0
 USER_NAME="$(id -un)"
+USER_GROUP="$(id -gn)"
+USE_CACHYOS=0
+XSERVER="xorg"
+REPOS_CHANGED=0
+PACMAN_CONF=/etc/pacman.conf
 
 usage() {
   cat <<'EOF'
 dwm-jabir installer
 
-  ./install.sh                core install (prompt সহ)
+  ./install.sh                core install (interactive)
   ./install.sh --with-apps    core + optional apps (install-apps.sh)
-  ./install.sh --no-deps      package install বাদ, শুধু config + dwm
-  ./install.sh --deploy-only  শুধু config/script deploy (build/system বাদ)
-  ./install.sh -y             সব prompt-এ default উত্তর
-  ./install.sh -h             এই help
+  ./install.sh --no-deps      skip packages, deploy config + build dwm
+  ./install.sh --deploy-only  deploy config/scripts only (skip build/system changes)
+  ./install.sh -y             use the default answer for every prompt
+  ./install.sh -h             show this help
 
 Core package list:  packages/core-official.txt + packages/core-aur.txt
 Optional apps:      packages/apps-official.txt + packages/apps-aur.txt
-বাদ দিতে:           packages/skip.txt
+Skip packages:      packages/skip.txt
 EOF
 }
 
@@ -57,15 +62,15 @@ while (($#)); do
     --deploy-only) DEPLOY_ONLY=1 ;;
     -y|--yes)    ASSUME_YES=1 ;;
     -h|--help)   usage; exit 0 ;;
-    *) die "অজানা option: $1 (--help দেখুন)" ;;
+    *) die "Unknown option: $1 (see --help)" ;;
   esac
   shift
 done
 
 # ── basic checks ────────────────────────────────────────────────────────
-[[ $EUID -eq 0 ]] && die "root হিসেবে চালাবেন না। আপনার নিজের user দিয়ে চালান — স্ক্রিপ্ট নিজেই sudo ব্যবহার করবে।"
-command -v pacman >/dev/null 2>&1 || die "pacman পাওয়া যায়নি — এটা Arch/CachyOS-এর জন্য।"
-command -v sudo   >/dev/null 2>&1 || die "sudo নেই। আগে root হয়ে 'pacman -S sudo' + 'visudo' করুন।"
+[[ $EUID -eq 0 ]] && die "Do not run as root. Run as your own user; the installer uses sudo when needed."
+command -v pacman >/dev/null 2>&1 || die "pacman was not found; this installer requires Arch/CachyOS."
+command -v sudo   >/dev/null 2>&1 || die "sudo is missing. As root, install sudo with pacman and configure access with visudo."
 
 DISTRO_ID="arch"
 DISTRO_NAME="Arch Linux"
@@ -80,8 +85,8 @@ info "System: $DISTRO_NAME"
 info "User:   $USER_NAME"
 info "Repo:   $REPO_DIR"
 
-# sudo একবার prompt করুক
-sudo -v || die "sudo ব্যর্থ"
+# Authenticate sudo once
+sudo -v || die "sudo authentication failed"
 
 ask_yes_no() {
   local prompt="$1" default="${2:-n}" ans hint
@@ -121,7 +126,7 @@ pac_install() {
   if sudo pacman -S --needed --noconfirm "${pkgs[@]}"; then
     return 0
   fi
-  warn "batch install ব্যর্থ — একটা একটা করে চেষ্টা করছি"
+  warn "Batch installation failed; retrying packages individually."
   for p in "${pkgs[@]}"; do
     sudo pacman -S --needed --noconfirm "$p" || PAC_FAILED+=("$p")
   done
@@ -138,7 +143,7 @@ build_aur_pkg() {
   git clone --depth=1 "https://aur.archlinux.org/${pkg}.git" "$tmp/$pkg" >/dev/null
   ( cd "$tmp/$pkg" && makepkg -si --noconfirm )
   rm -rf "$tmp"
-  command -v "$bin" >/dev/null 2>&1 || die "$bin build ব্যর্থ"
+  command -v "$bin" >/dev/null 2>&1 || die "$bin build failed"
 }
 
 ensure_helper() {
@@ -149,7 +154,7 @@ ensure_helper() {
   local choice="paru"
   if ((!ASSUME_YES)); then
     echo ""
-    echo "AUR helper পাওয়া যায়নি — কোনটা install করবেন?"
+    echo "No AUR helper found. Which one should be installed?"
     echo "  1) paru      (recommended)"
     echo "  2) yay-bin"
     local ans
@@ -163,7 +168,7 @@ ensure_helper() {
     build_aur_pkg paru-bin paru
     HELPER=paru
   fi
-  command -v "$HELPER" >/dev/null 2>&1 || die "AUR helper install ব্যর্থ"
+  command -v "$HELPER" >/dev/null 2>&1 || die "AUR helper installation failed"
 }
 
 aur_install() {
@@ -179,20 +184,119 @@ aur_install() {
   if "$helper" -S --needed --noconfirm "${pkgs[@]}"; then
     return 0
   fi
-  warn "batch install ব্যর্থ — একটা একটা করে চেষ্টা করছি"
+  warn "Batch installation failed; retrying packages individually."
   for p in "${pkgs[@]}"; do
     "$helper" -S --needed --noconfirm "$p" || AUR_FAILED+=("$p")
   done
   return 0
 }
 
-# ── repo helpers ────────────────────────────────────────────────────────
-add_pacman_repo() {
-  local name="$1" server="$2"
-  if grep -qE "^\[${name}\]" /etc/pacman.conf; then return 0; fi
-  info "pacman repo যোগ: [$name]"
-  printf '\n[%s]\nServer = %s\n' "$name" "$server" | sudo tee -a /etc/pacman.conf >/dev/null || return 1
-  sudo pacman -Sy || return 1
+# ── repository preparation (before any desktop packages) ────────────────
+select_kernel() {
+  local default=n
+  [[ "$DISTRO_ID" == "cachyos" ]] && default=y
+  if ask_yes_no "Install CachyOS kernel and prioritize CPU-optimized CachyOS repositories?" "$default"; then
+    [[ "$(uname -m)" == "x86_64" ]] || die "CachyOS repositories require x86_64."
+    USE_CACHYOS=1
+  else
+    info "Keeping the current kernel and repository choices."
+  fi
+}
+
+select_xserver() {
+  # Keep an existing server by default; new installations default to Xorg.
+  if pacman -Qq xlibre-xserver >/dev/null 2>&1; then
+    XSERVER=xlibre
+    info "Keeping the installed XLibre server."
+  elif ask_yes_no "Use XLibre instead of Xorg?" n; then
+    XSERVER=xlibre
+  fi
+}
+
+setup_xlibre_repo() {
+  local tmp fingerprint=0C92313001CFCA27627B9098B97F7C613F359424
+  command -v curl >/dev/null 2>&1 || die "curl is required to download the XLibre signing key."
+  tmp="$(mktemp -d)"
+  if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 \
+      https://packages.xlibre.net/arch/xlibre-archlinux.asc -o "$tmp/xlibre.asc"; then
+    rm -rf "$tmp"
+    die "Could not download the XLibre signing key."
+  fi
+  # Signing by the full fingerprint also rejects an unexpected downloaded key.
+  if ! sudo pacman-key --init || ! sudo pacman-key --add "$tmp/xlibre.asc" || \
+      ! sudo pacman-key --lsign-key "$fingerprint"; then
+    rm -rf "$tmp"
+    die "Could not trust the XLibre signing key."
+  fi
+  rm -rf "$tmp"
+  if ! grep -qE '^\[xlibre-stable\][[:space:]]*$' "$PACMAN_CONF"; then
+    sudo cp -a "$PACMAN_CONF" "$PACMAN_CONF.dwm-backup-$(date +%Y%m%d-%H%M%S)"
+    printf '\n[xlibre-stable]\nSigLevel = Required DatabaseOptional\nServer = https://packages.xlibre.net/arch/stable/$arch\n' \
+      | sudo tee -a "$PACMAN_CONF" >/dev/null
+  fi
+  REPOS_CHANGED=1
+}
+
+setup_cachyos_repos() {
+  local tmp level="" mirror fingerprint=882DCFE48E2051D48E2562ABF3B607488DB35A47
+  info "Preparing CachyOS signing keys and optimized repositories..."
+  sudo pacman-key --init
+  sudo pacman-key --populate archlinux
+  sudo pacman-key --recv-keys "$fingerprint" --keyserver hkps://keyserver.ubuntu.com \
+    || die "Could not import the CachyOS signing key. Check your connection and system clock."
+  sudo pacman-key --lsign-key "$fingerprint" \
+    || die "Could not trust the CachyOS signing key."
+
+  # Bootstrap only the signed keyring/mirrorlists, even if a previous run left
+  # broken third-party repositories in pacman.conf. No hardcoded package versions.
+  tmp="$(mktemp -d)"
+  awk '/^[[:space:]]*\[/ && $0 !~ /^[[:space:]]*\[options\]/ { exit } { print }' \
+    "$PACMAN_CONF" > "$tmp/pacman.conf"
+  printf '\n[cachyos]\nSigLevel = Required DatabaseOptional\nServer = https://mirror.cachyos.org/repo/x86_64/cachyos\n' >> "$tmp/pacman.conf"
+  if ! sudo pacman --config "$tmp/pacman.conf" -Sy --needed --noconfirm \
+      cachyos-keyring cachyos-mirrorlist cachyos-v3-mirrorlist cachyos-v4-mirrorlist; then
+    rm -rf "$tmp"
+    die "CachyOS keyring/mirrorlist installation failed; desktop packages have not been installed."
+  fi
+  sudo pacman-key --populate cachyos
+
+  # The loader checks both CPU and OS support for the instruction set.
+  if /lib/ld-linux-x86-64.so.2 --help | grep -F 'x86-64-v4 (supported, searched)' >/dev/null; then
+    level=v4
+    if command -v gcc >/dev/null 2>&1 && \
+        gcc -march=native -Q --help=target 2>/dev/null | grep -E '^[[:space:]]*-march=[[:space:]]+znver[45][[:space:]]*$' >/dev/null; then
+      level=znver4
+    fi
+  elif /lib/ld-linux-x86-64.so.2 --help | grep -F 'x86-64-v3 (supported, searched)' >/dev/null; then
+    level=v3
+  fi
+  mirror="${level:-generic}"
+  info "CachyOS repository optimization: $mirror"
+  : > "$tmp/repos.conf"
+  if [[ -n "$level" ]]; then
+    mirror=v3; [[ "$level" == v4 || "$level" == znver4 ]] && mirror=v4
+    printf '[cachyos-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror" >> "$tmp/repos.conf"
+    printf '[cachyos-core-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror" >> "$tmp/repos.conf"
+    printf '[cachyos-extra-%s]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-%s-mirrorlist\n\n' "$level" "$mirror" >> "$tmp/repos.conf"
+  fi
+  printf '[cachyos]\nSigLevel = Required DatabaseOptional\nInclude = /etc/pacman.d/cachyos-mirrorlist\n\n' >> "$tmp/repos.conf"
+  # Replace stable CachyOS sections and place them BEFORE Arch repositories.
+  # Keep separately configured testing/custom repositories intact.
+  awk -v repos="$tmp/repos.conf" '
+    /^[[:space:]]*\[/ {
+      skip = ($0 ~ /^[[:space:]]*\[(cachyos|cachyos(-core|-extra)?-(v3|v4|znver4))\]/)
+      if (!inserted && $0 !~ /^[[:space:]]*\[options\]/) {
+        while ((getline line < repos) > 0) print line
+        close(repos); inserted = 1
+      }
+    }
+    !skip { print }
+    END { if (!inserted) while ((getline line < repos) > 0) print line }
+  ' "$PACMAN_CONF" > "$tmp/updated.conf"
+  sudo cp -a "$PACMAN_CONF" "$PACMAN_CONF.dwm-backup-$(date +%Y%m%d-%H%M%S)"
+  sudo install -m644 "$tmp/updated.conf" "$PACMAN_CONF"
+  rm -rf "$tmp"
+  REPOS_CHANGED=1
 }
 
 # ── firmware / microcode ────────────────────────────────────────────────
@@ -217,69 +321,37 @@ setup_microcode() {
 
 # ── X server ────────────────────────────────────────────────────────────
 setup_xserver() {
-  if pacman -Qq xlibre-meta >/dev/null 2>&1; then ok "xlibre already installed"; return; fi
-  if pacman -Qq xorg-server >/dev/null 2>&1; then ok "xorg-server already installed"; return; fi
-
-  local use_xlibre=1
-  if ((!ASSUME_YES)); then
-    if ! ask_yes_no "Xlibre (আপনার এখনকার X server) ব্যবহার করবেন? না বললে xorg-server" y; then
-      use_xlibre=0
+  local -a flags=(-S --needed --noconfirm)
+  if [[ "$XSERVER" == xlibre ]]; then
+    if pacman -Qq xorg-server >/dev/null 2>&1; then
+      info "Switching from Xorg to XLibre; confirm the conflicting package replacements in pacman."
+      flags=(-S --needed)
     fi
-  fi
-
-  if ((use_xlibre)); then
-    if ! pacman -Sl xlibre-stable >/dev/null 2>&1; then
-      if ask_yes_no "xlibre repo (/etc/pacman.conf) যোগ করব?" y; then
-        add_pacman_repo xlibre-stable 'https://packages.xlibre.net/arch/stable/$arch' \
-          || warn "xlibre repo add/sync ব্যর্থ"
-      fi
-    fi
-    pac_install xlibre-meta
-    if ! pacman -Qq xlibre-meta >/dev/null 2>&1 && ! pacman -Qq xorg-server >/dev/null 2>&1; then
-      warn "xlibre install হয়নি — xorg-server দিয়ে চালাচ্ছি"
-      pac_install xorg-server
-    fi
+    # Server + libinput avoids pulling every legacy driver through xlibre-meta.
+    sudo pacman "${flags[@]}" xlibre-xserver xlibre-input-libinput \
+      || die "XLibre installation failed. Resolve the package conflict before retrying."
+    pacman -Qq xlibre-xserver >/dev/null 2>&1 || die "XLibre server is missing."
   else
-    pac_install xorg-server
+    sudo pacman -S --needed --noconfirm xorg-server xf86-input-libinput \
+      || die "Xorg installation failed."
+    pacman -Qq xorg-server >/dev/null 2>&1 || die "Xorg server is missing."
   fi
 }
 
 # ── CachyOS kernel ──────────────────────────────────────────────────────
 setup_kernel() {
-  if [[ "$DISTRO_ID" == "cachyos" ]]; then
-    ok "CachyOS system — kernel আগেই CachyOS"
-    return
-  fi
-  if ! ask_yes_no "CachyOS kernel (linux-cachyos) install করবেন? (plain Arch-এ repo/keyring দরকার)" n; then
-    info "kernel: default linux থাকবে"
-    return
-  fi
-
-  if ! pacman -Sl cachyos >/dev/null 2>&1; then
-    info "CachyOS repo যোগ করা হচ্ছে..."
-    if ! add_pacman_repo cachyos 'https://mirror.cachyos.org/repo/x86_64/cachyos'; then
-      warn "CachyOS repo add ব্যর্থ — kernel install বাদ"
-      return
-    fi
-    sudo pacman -S --needed --noconfirm cachyos-keyring cachyos-mirrorlist 2>/dev/null \
-      || warn "cachyos-keyring install ব্যর্থ — signature error হলে ম্যানুয়ালি keyring লাগবে"
-  fi
-
-  if ! pac_install linux-cachyos linux-cachyos-headers; then
-    warn "CachyOS kernel install ব্যর্থ। CachyOS ISO দিয়ে install করলে এটা লাগবে না।"
-    return
-  fi
-  if ! pacman -Qq linux-cachyos >/dev/null 2>&1; then
-    warn "linux-cachyos install হয়নি"
-    return
-  fi
-  command -v mkinitcpio >/dev/null 2>&1 && { sudo mkinitcpio -P || warn "mkinitcpio -P ব্যর্থ"; }
+  ((USE_CACHYOS)) || return 0
+  sudo pacman -S --needed --noconfirm linux-cachyos linux-cachyos-headers \
+    || die "CachyOS kernel installation failed. Check the signature/conflict error above."
+  pacman -Qq linux-cachyos >/dev/null 2>&1 || die "linux-cachyos is missing."
+  pacman -Qq linux-cachyos-headers >/dev/null 2>&1 || die "linux-cachyos-headers is missing."
+  command -v mkinitcpio >/dev/null 2>&1 && { sudo mkinitcpio -P || warn "mkinitcpio -P failed"; }
   if [[ -d /boot/loader ]]; then
     sudo bootctl update 2>/dev/null || true
   elif [[ -f /boot/grub/grub.cfg ]]; then
-    sudo grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null || warn "grub-mkconfig ব্যর্থ"
+    sudo grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null || warn "grub-mkconfig failed"
   fi
-  ok "CachyOS kernel installed — reboot করে boot entry দেখুন"
+  ok "CachyOS kernel installed; reboot and check the boot entry."
 }
 
 # ── network / DM / shell ────────────────────────────────────────────────
@@ -292,11 +364,11 @@ handle_dm_conflict() {
   local dm
   for dm in gdm sddm; do
     if systemctl is-enabled "$dm" >/dev/null 2>&1; then
-      warn "$dm enabled — LightDM-এর সাথে conflict করবে"
-      if ask_yes_no "$dm disable করে LightDM enable করব?" y; then
-        sudo systemctl disable "$dm" || warn "$dm disable ব্যর্থ"
+      warn "$dm is enabled and conflicts with LightDM."
+      if ask_yes_no "Disable $dm and enable LightDM?" y; then
+        sudo systemctl disable "$dm" || warn "Could not disable $dm"
       else
-        warn "দুটো DM একসাথে চললে login সমস্যা হতে পারে"
+        warn "Running two display managers can cause login problems."
       fi
     fi
   done
@@ -306,14 +378,77 @@ setup_shell() {
   local cur
   cur="$(getent passwd "$USER_NAME" | cut -d: -f7)"
   if [[ "$cur" != "/usr/bin/fish" ]]; then
-    if ask_yes_no "fish কে default shell করব?" y; then
-      chsh -s /usr/bin/fish "$USER_NAME" || warn "chsh ব্যর্থ — পরে নিজে 'chsh -s /usr/bin/fish' চালান"
+    if ask_yes_no "Set fish as the default shell?" y; then
+      chsh -s /usr/bin/fish "$USER_NAME" || warn "chsh failed; run 'chsh -s /usr/bin/fish' later."
     fi
   fi
 }
 
 # ── backup + deploy ─────────────────────────────────────────────────────
 BACKUP_DIR="$HOME/.config-backup-$(date +%Y%m%d-%H%M%S)"
+
+ensure_user_dir() {
+  local path="$1" parent resolved home_root
+  home_root="$(realpath "$HOME")"
+  resolved="$(realpath -m "$path")"
+  [[ "$resolved" == "$home_root" || "$resolved" == "$home_root/"* ]] \
+    || die "Deployment directory points outside your home: $path"
+  if [[ "$path" != "$HOME" ]]; then
+    parent="$(dirname "$path")"
+    ensure_user_dir "$parent"
+  fi
+  if [[ -e "$path" ]]; then
+    [[ -d "$path" ]] || die "Expected a directory: $path"
+    if [[ "$(stat -Lc %u "$path")" == 0 ]]; then
+      info "Repairing root-owned directory: $path"
+      sudo chown "$USER_NAME:$USER_GROUP" "$resolved"
+      sudo chmod u+rwx "$resolved"
+    fi
+  else
+    mkdir "$path"
+  fi
+  [[ -w "$path" && -x "$path" ]] \
+    || die "Directory is not writable by $USER_NAME: $path (check ownership, ACLs, or a read-only filesystem)."
+}
+
+prepare_user_paths() {
+  local path name resolved home_root
+  home_root="$(realpath "$HOME")"
+  for path in "$HOME/.local/bin" "$HOME/.local/share/applications" \
+      "$HOME/.local/share/fonts" "$HOME/.local/share/dwm-titus" \
+      "$HOME/.config" "$HOME/custom-scripts" "$HOME/user_scripts" \
+      "$HOME/Pictures/backgrounds"; do
+    ensure_user_dir "$path"
+  done
+  # Repair only installer destinations left root-owned by a previous sudo build.
+  local -a targets=("$HOME/.local/bin" "$HOME/.local/share/dwm-titus" \
+    "$HOME/.local/share/applications" "$HOME/.local/share/fonts" \
+    "$HOME/custom-scripts" "$HOME/user_scripts" "$HOME/Pictures/backgrounds")
+  for path in "$REPO_DIR"/config/*/; do
+    [[ -d "$path" ]] || continue
+    name="$(basename "$path")"
+    ensure_user_dir "$HOME/.config/$name"
+    targets+=("$HOME/.config/$name")
+  done
+  for name in .xinitrc .xprofile .profile .bash_profile .bashrc .zshrc .gtkrc-2.0 picom.conf .fehbg; do
+    targets+=("$HOME/$name")
+  done
+  for name in starship.toml mimeapps.list user-dirs.dirs xdg-terminals.list; do
+    targets+=("$HOME/.config/$name")
+  done
+  for path in "${targets[@]}"; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    resolved="$(realpath -m "$path")"
+    [[ "$resolved" == "$home_root/"* ]] || die "Deployment target points outside your home: $path"
+    if [[ -L "$path" ]]; then
+      # chown the link only; never traverse a linked directory tree.
+      [[ "$(stat -c %u "$path")" != 0 ]] || sudo chown -h "$USER_NAME:$USER_GROUP" "$path"
+    elif find "$path" -xdev -uid 0 -print -quit | grep . >/dev/null; then
+      info "Repairing root-owned deployment files: $path"
+      sudo find "$path" -xdev -uid 0 -exec chown -h "$USER_NAME:$USER_GROUP" {} +
+    fi
+  done
+}
 
 backup_path() {
   local p="$1" rel
@@ -446,11 +581,14 @@ deploy_config_dirs() {
 }
 
 build_dwm() {
-  command -v make >/dev/null 2>&1 || die "make নেই — base-devel install হয়নি"
-  command -v cc   >/dev/null 2>&1 || die "C compiler নেই — base-devel install হয়নি"
+  command -v make >/dev/null 2>&1 || die "make is missing; install base-devel."
+  command -v cc   >/dev/null 2>&1 || die "C compiler is missing; install base-devel."
   info "dwm build + install (sudo)..."
-  if ! sudo make -C "$REPO_DIR" clean install; then
-    die "dwm build/install ব্যর্থ — উপরের error দেখুন"
+  if ! make -C "$REPO_DIR" clean all; then
+    die "dwm build failed; see the error above."
+  fi
+  if ! sudo make -C "$REPO_DIR" install USER_HOME="$HOME" OWNER="$USER_NAME"; then
+    die "dwm installation failed; see the error above."
   fi
 }
 
@@ -458,9 +596,9 @@ setup_lightdm() {
   info "LightDM config..."
   handle_dm_conflict
   if [[ -f "$REPO_DIR/lightdm/Makefile" ]]; then
-    sudo make -C "$REPO_DIR/lightdm" install || warn "LightDM config install ব্যর্থ"
+    sudo make -C "$REPO_DIR/lightdm" install || warn "LightDM configuration installation failed"
   fi
-  sudo systemctl enable lightdm 2>/dev/null || warn "lightdm enable ব্যর্থ"
+  sudo systemctl enable lightdm 2>/dev/null || warn "Could not enable lightdm"
 }
 
 # ── system tuning (ask) ─────────────────────────────────────────────────
@@ -483,7 +621,7 @@ setup_system_config() {
   local etc="$REPO_DIR/system-config/etc"
 
   if [[ -f "$etc/X11/xorg.conf.d/30-pointer-touchpad.conf" ]]; then
-    if ask_yes_no "Touchpad config (tapping, natural scroll, left-handed mouse) ব্যবহার করবেন?" n; then
+    if ask_yes_no "Apply touchpad configuration (tapping, natural scroll, left-handed mouse)?" n; then
       sudo install -Dm644 "$etc/X11/xorg.conf.d/30-pointer-touchpad.conf" \
         /etc/X11/xorg.conf.d/30-pointer-touchpad.conf
       ok "touchpad config installed"
@@ -491,19 +629,19 @@ setup_system_config() {
   fi
 
   if [[ -f "$etc/keyd/default.conf" ]]; then
-    if ask_yes_no "keyd keyboard remap (আপনার custom layout) ব্যবহার করবেন?" n; then
+    if ask_yes_no "Apply the bundled keyd keyboard remapping?" n; then
       pac_install keyd
       if pacman -Qq keyd >/dev/null 2>&1; then
         sudo install -Dm644 "$etc/keyd/default.conf" /etc/keyd/default.conf
-        sudo systemctl enable --now keyd 2>/dev/null || warn "keyd service enable ব্যর্থ"
+        sudo systemctl enable --now keyd 2>/dev/null || warn "Could not enable the keyd service"
         ok "keyd config installed"
       else
-        warn "keyd install হয়নি — config বাদ"
+        warn "keyd is not installed; skipping its configuration."
       fi
     fi
   fi
 
-  if ask_yes_no "System tuning (sysctl, zram, udev, i915/tearfree) ব্যবহার করবেন?" n; then
+  if ask_yes_no "Apply system tuning (sysctl, zram, udev, i915/tearfree)?" n; then
     local f
     for f in "$etc"/sysctl.d/*.conf; do
       [[ -f "$f" ]] || continue
@@ -527,7 +665,7 @@ setup_system_config() {
         sudo install -Dm644 "$etc/X11/xorg.conf.d/20-tearfree.conf" /etc/X11/xorg.conf.d/20-tearfree.conf
       ok "Intel tuning installed"
     else
-      info "GPU=$gpu — i915/tearfree বাদ"
+      info "GPU=$gpu; skipping i915/tearfree."
     fi
   fi
 }
@@ -538,7 +676,7 @@ check_critical() {
     pacman -Qq "$p" >/dev/null 2>&1 || missing+=("$p")
   done
   if ((${#missing[@]})); then
-    die "critical package missing: ${missing[*]} — উপরের error দেখুন"
+    die "Critical packages missing: ${missing[*]}; see the errors above."
   fi
 }
 
@@ -550,14 +688,26 @@ echo "╚═══════════════════════�
 echo ""
 
 if ((DEPLOY_ONLY)); then
-  warn "--deploy-only: package install + dwm build + system config বাদ"
+  warn "--deploy-only: skipping packages, dwm build, and system configuration."
 elif ((NO_DEPS)); then
-  warn "--no-deps: package install বাদ"
+  warn "--no-deps: skipping package installation."
 else
-  if ask_yes_no "সিস্টেম update (pacman -Syu) করব?" y; then
-    sudo pacman -Syu --noconfirm || warn "pacman -Syu ব্যর্থ — চলমান database দিয়ে চেষ্টা"
+  select_kernel
+  select_xserver
+  ((USE_CACHYOS)) && setup_cachyos_repos
+  # Existing XLibre repositories need their key repaired before the first sync,
+  # including on reruns that keep Xorg as the selected server.
+  if [[ "$XSERVER" == xlibre ]] || grep -qE '^\[xlibre(-stable|-oldstable|-beta)?\]' "$PACMAN_CONF"; then
+    setup_xlibre_repo
+  fi
+  if ((REPOS_CHANGED)); then
+    info "Repositories prepared; a full system upgrade is required before installing packages."
+    sudo pacman -Syu --noconfirm || die "System upgrade failed; resolve the error before retrying."
+  elif ask_yes_no "Update the system (pacman -Syu)?" y; then
+    sudo pacman -Syu --noconfirm || die "System upgrade failed; resolve the error before retrying."
   fi
 
+  setup_kernel
   setup_firmware
   setup_microcode
   setup_xserver
@@ -571,11 +721,11 @@ else
     aur_install "$HELPER" "${CORE_AUR[@]}"
   fi
 
-  setup_kernel
   setup_network
   check_critical
 fi
 
+prepare_user_paths
 info "config backup → $BACKUP_DIR"
 mkdir -p "$BACKUP_DIR"
 for d in "$REPO_DIR"/config/*/; do
@@ -604,15 +754,15 @@ deploy_systemd_masks
 ((NO_DEPS || DEPLOY_ONLY)) || setup_shell
 
 if [[ -x "$REPO_DIR/scripts/theme-apply.sh" ]]; then
-  if ask_yes_no "থিম এখনই apply করব? (rofi/polybar/gtk/qt colors generate)" y; then
-    "$REPO_DIR/scripts/theme-apply.sh" >/dev/null 2>&1 || warn "theme-apply ব্যর্থ — পরে নিজে চালান"
+  if ask_yes_no "Apply the theme now (generate rofi/polybar/gtk/qt colors)?" y; then
+    "$REPO_DIR/scripts/theme-apply.sh" >/dev/null 2>&1 || warn "theme-apply failed; run it manually later."
     ok "theme applied"
   fi
 fi
 
 if ((WITH_APPS)); then
   info "optional apps install..."
-  "$REPO_DIR/install-apps.sh" || warn "install-apps.sh কিছু প্যাকেজে ব্যর্থ"
+  "$REPO_DIR/install-apps.sh" || warn "install-apps.sh failed to install some packages."
 fi
 
 echo ""
@@ -621,22 +771,22 @@ echo "║          Installation Complete!               ║"
 echo "╚═══════════════════════════════════════════════╝"
 echo ""
 if ((DEPLOY_ONLY)); then
-  ok "config deployed (dwm build বাদ)।"
+  ok "Configuration deployed (dwm build skipped)."
 else
-  ok "dwm installed. Logout → 'dwm' session নির্বাচন করুন (অথবা startx)।"
+  ok "dwm installed. Log out and select the 'dwm' session (or run startx)."
 fi
 echo ""
-echo "  পরের ধাপ:"
-echo "   1. ./setup-secrets.sh      → API token বসান (GitHub-এ নেই)"
-echo "   2. logout → LightDM-এ dwm  → login"
-echo "   3. চেক: polybar, rofi (SUPER+R), wallpaper, alacritty"
+echo "  Next steps:"
+echo "   1. ./setup-secrets.sh      → configure API tokens (not stored in GitHub)"
+echo "   2. log out → select dwm in LightDM → log in"
+echo "   3. check: polybar, rofi (SUPER+R), wallpaper, alacritty"
 echo ""
 echo "  Backup of old configs: $BACKUP_DIR"
 if ((${#PAC_FAILED[@]})); then
   echo ""
-  warn "install হয়নি (official): ${PAC_FAILED[*]}"
+  warn "Not installed (official): ${PAC_FAILED[*]}"
 fi
 if ((${#AUR_FAILED[@]})); then
-  warn "install হয়নি (AUR): ${AUR_FAILED[*]}"
+  warn "Not installed (AUR): ${AUR_FAILED[*]}"
 fi
 echo ""
