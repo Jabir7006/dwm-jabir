@@ -112,7 +112,7 @@ keys = [
   { mod="SUPER SHIFT",      key="k",       desc="Move window up",          func="movestack",   i=-1 },
  # { mod="SUPER",            key="Return",  desc="Promote to master",       func="zoom" },
   { mod="SUPER",            key="Tab",     desc="Previous tag",            func="view" },
-  { mod="SUPER",            key="q",       desc="Close window",            func="killclient" },
+  { mod="SUPER",            key="q",       desc="Close keyboard or window", func="spawn", cmd="$HOME/.config/polybar/themes/minimal/osk-toggle.sh --close-window" },
 
   # ── Master / stack sizing ─────────────────────────────────────────────────────
   { mod="SUPER",            key="i",       desc="Add to master",           func="incnmaster",  i=1 },
@@ -148,6 +148,7 @@ keys = [
 
   # ── Custom Scripts ───────────────────────────────────────────────────────────
   { mod="SUPER",            key="k",       desc="Toggle laptop built in keyboard",      func="spawn",       cmd="$HOME/custom-scripts/toggle-keyboard.sh" },
+  { mod="SUPER",            key="F9",      desc="Toggle on-screen keyboard",            func="spawn",       cmd="$HOME/.config/polybar/themes/minimal/osk-toggle.sh" },
   { mod="SUPER CTRL",       key="k",       desc="Toggle keyboard click sound",         func="spawn",       cmd="/home/jabir/.local/bin/wayclick toggle" },
   { mod="SUPER", key="n", desc="App Manager", func="spawn", exec=["app-manager"] },
   

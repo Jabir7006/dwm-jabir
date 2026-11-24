@@ -56,7 +56,13 @@ rules = [
     { class="TUI.float", isfloating=1, width=900, height=700, iscentered=1 },
     { class="TUI.tile",  isfloating=0 },
     { class="WebApp.float", isfloating=1, width=900, height=500, iscentered=1 },
-    
+
+    # ── on-screen keyboard ───────────────────────────────────────────────────
+    # Fallback if Onboard's force-to-top overlay mode is disabled. The toggle
+    # script enables the overlay and sets its compact, centered geometry.
+    # Onboard never takes keyboard focus; typing goes to the active app.
+    { class="Onboard", isfloating=1, noswallow=1 },
+
     # YouTube PiP Rules
     { title="Picture-in-Picture", isfloating=1 }, # Firefox
     { title="Picture in picture", isfloating=1 }, # Chromium browsers (Chrome, Brave, etc.)    
