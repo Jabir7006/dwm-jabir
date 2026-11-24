@@ -18,7 +18,9 @@ read_color() {
 }
 
 COLOR_ON="$(read_color green)";   COLOR_ON="${COLOR_ON:-#F38D70}"
-COLOR_OFF="$(read_color fg-alt)"; COLOR_OFF="${COLOR_OFF:-#72696A}"
+COLOR_OFF="$(read_color fg)";     COLOR_OFF="${COLOR_OFF:-#E6D9DB}"
+# Keep the inactive state muted while retaining a readable silhouette.
+COLOR_OFF="#80${COLOR_OFF#\#}"
 
 state="$(tr -d '[:space:]' < "$STATE_FILE" 2>/dev/null)"
 

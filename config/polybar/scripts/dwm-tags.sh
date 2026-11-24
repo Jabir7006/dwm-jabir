@@ -6,7 +6,7 @@ COLOR_ACTIVE="${DWM_TAG_FOREGROUND:-${DWM_TAG_ACTIVE_COLOR:-#eceff4}}"
 COLOR_OCCUPIED="${DWM_TAG_FOREGROUND:-${DWM_TAG_OCCUPIED_COLOR:-#d8dee9}}"
 COLOR_URGENT="${DWM_TAG_URGENT_COLOR:-#bf616a}"
 COLOR_EMPTY="${DWM_TAG_EMPTY_COLOR:-#80${COLOR_OCCUPIED#\#}}"
-FONT_ACTIVE="${DWM_TAG_ACTIVE_FONT:-15}"
+FONT_ACTIVE="${DWM_TAG_ACTIVE_FONT:-18}"
 FONT_OCCUPIED="${DWM_TAG_OCCUPIED_FONT:-15}"
 FONT_URGENT="${DWM_TAG_URGENT_FONT:-15}"
 ACTIVE_ICON="${DWM_TAG_ACTIVE_ICON:-󱓻}"
@@ -64,9 +64,9 @@ fi
         else
             continue
         fi
-        # A 24px clickable slot approximates Omarchy's 6px padding, 1.5px
-        # margins and 9px minimum content width with this 12px mono font.
-        output+="%{A1:xdotool key super+$tag:}%{O8}%{F${color}}%{T${font}}$symbol%{T-}%{F-}%{O9}%{A}"
+        # At 14px both number and active glyph advance 8px; fixed spacing
+        # keeps each clickable workspace slot 26px wide.
+        output+="%{A1:xdotool key super+$tag:}%{O8}%{F${color}}%{T${font}}$symbol%{T-}%{F-}%{O10}%{A}"
     done
 
     # Always output something, even if empty, to prevent polybar from breaking

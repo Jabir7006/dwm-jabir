@@ -499,9 +499,9 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAPIRUS FOLDER COLOUR — theme only the folders, never app/brand icons.
+# PAPIRUS FOLDER COLOUR — folders and wireless status; app/brand icons inherit.
 # Builds a small user-local overlay theme ("Papirus-Dynamic") that inherits the
-# stock Papirus-Dark/Papirus-Light theme and overrides just the places icons.
+# stock Papirus-Dark/Papirus-Light theme with clear wireless status artwork.
 # `icon_folder` picks one of Papirus' 25 bundled colours; when a theme has no
 # such key (dynamic), the nearest bundled colour to the theme accent is used.
 # Failure never blocks the rest of theme-apply: we fall back to stock Papirus.
@@ -512,7 +512,8 @@ if [[ -x "$PAPIRUS_FOLDER_SCRIPT" ]]; then
     ICON_MODE="dark"
     [[ "$DARK_MODE" == "true" ]] || ICON_MODE="light"
     if "$PAPIRUS_FOLDER_SCRIPT" --mode "$ICON_MODE" --color "$ICON_FOLDER" \
-            --accent "${SEL_BORDER:-${TERM_C4:-#5294e2}}" --quiet >/dev/null 2>&1; then
+            --accent "${SEL_BORDER:-${TERM_C4:-#5294e2}}" \
+            --foreground "${PB_FG:-${TERM_FG:-#dfdfdf}}" --quiet >/dev/null 2>&1; then
         GTK_ICON_NAME="Papirus-Dynamic"
     else
         echo "theme-apply: folder colour failed; keeping $GTK_ICON_NAME" >&2

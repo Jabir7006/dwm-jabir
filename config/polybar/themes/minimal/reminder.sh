@@ -32,6 +32,12 @@ HEAL_FILE="$STATE_DIR/.healed"
 COLORS="${XDG_CONFIG_HOME:-$HOME/.config}/polybar/themes/minimal/colors.ini"
 ICON_IDLE=$'\ue7f4'   # Material Icons: notifications
 ICON_ACTIVE=$'\ue7f6' # Material Icons: notifications_active
+ICON_FONT=10
+if [[ ${1:-status} == status && ${2:-} == --compact ]]; then
+  ICON_IDLE=$'\U000f009a'   # Nerd Font: bell
+  ICON_ACTIVE=$'\U000f009e' # Nerd Font: bell-ring
+  ICON_FONT=19             # Optically matched center bell
+fi
 ACCENT=""
 
 # ── state locking ──────────────────────────────────────────────────────────
@@ -313,7 +319,7 @@ cmd_list() {
 cmd_status() {
   # Fast path: no reminders → one builtin read + one printf, no forks at all.
   if [[ ! -s $STORE ]]; then
-    printf '%%{T10}%s%%{T-}' "$ICON_IDLE"
+    printf '%%{T%d}%s%%{T-}' "$ICON_FONT" "$ICON_IDLE"
     return
   fi
 
@@ -324,7 +330,7 @@ cmd_status() {
   lock_state
   if [[ ! -s $STORE ]]; then
     unlock_state
-    printf '%%{T10}%s%%{T-}' "$ICON_IDLE"
+    printf '%%{T%d}%s%%{T-}' "$ICON_FONT" "$ICON_IDLE"
     return
   fi
 
@@ -355,11 +361,11 @@ cmd_status() {
   unlock_state
 
   if (( count == 0 )); then
-    printf '%%{T10}%s%%{T-}' "$ICON_IDLE"
+    printf '%%{T%d}%s%%{T-}' "$ICON_FONT" "$ICON_IDLE"
     return
   fi
 
-  out="%{T10}${ICON_ACTIVE}%{T-} $(human_seconds $(( soonest - now )))"
+  out="%{T${ICON_FONT}}${ICON_ACTIVE}%{T-} $(human_seconds $(( soonest - now )))"
   (( count > 1 )) && out+=" ·$count"
   accent_color
   if [[ -n $ACCENT ]]; then
