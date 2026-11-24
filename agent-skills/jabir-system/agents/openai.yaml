@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jabir System"
+  short_description: "Customize Jabir's Arch and dwm desktop"
+  default_prompt: "Use $jabir-system to inspect and customize my current Linux desktop."
