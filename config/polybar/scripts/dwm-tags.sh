@@ -1,20 +1,16 @@
 #!/bin/bash
 
-# Color configuration (using colors from colors.ini)
-COLOR_ACTIVE="${DWM_TAG_ACTIVE_COLOR:-#eceff4}"      # legacy active fg (fallback)
-COLOR_OCCUPIED="${DWM_TAG_OCCUPIED_COLOR:-#d8dee9}"  # fg from colors.ini
-COLOR_URGENT="${DWM_TAG_URGENT_COLOR:-#bf616a}"      # red from colors.ini
-# The active tag is drawn as a floating filled disc: a negative-circled digit
-# glyph (❶..❾) painted in the accent color, with the number reversed out to the
-# bar background. It is a single glyph, so it centers itself vertically in the bar
-# with padding above/below — no background block, no seams. COLOR_ACTIVE_BG is
-# the disc color; both values are theme-driven via theme-apply.sh.
-COLOR_ACTIVE_BG="${DWM_TAG_ACTIVE_BG:-#986BC7}"                        # disc = accent
-COLOR_ACTIVE_FG="${DWM_TAG_ACTIVE_FG:-${DWM_TAG_ACTIVE_COLOR:-#151218}}"  # (legacy) digit
-FONT_ACTIVE="${DWM_TAG_ACTIVE_FONT:-2}"              # Font index for active
-FONT_OCCUPIED="${DWM_TAG_OCCUPIED_FONT:-4}"          # Font index for occupied
-FONT_URGENT="${DWM_TAG_URGENT_FONT:-3}"              # Font index for urgent
-FONT_BADGE="${DWM_TAG_BADGE_FONT:-14}"               # Font index for the active disc glyph (fonts.ini font-13)
+# Omarchy's workspace style: small regular numbers, a rounded-square active
+# glyph, and half-opacity empty slots. All updates still use the same X events.
+COLOR_ACTIVE="${DWM_TAG_FOREGROUND:-${DWM_TAG_ACTIVE_COLOR:-#eceff4}}"
+COLOR_OCCUPIED="${DWM_TAG_FOREGROUND:-${DWM_TAG_OCCUPIED_COLOR:-#d8dee9}}"
+COLOR_URGENT="${DWM_TAG_URGENT_COLOR:-#bf616a}"
+COLOR_EMPTY="${DWM_TAG_EMPTY_COLOR:-#80${COLOR_OCCUPIED#\#}}"
+FONT_ACTIVE="${DWM_TAG_ACTIVE_FONT:-15}"
+FONT_OCCUPIED="${DWM_TAG_OCCUPIED_FONT:-15}"
+FONT_URGENT="${DWM_TAG_URGENT_FONT:-15}"
+ACTIVE_ICON="${DWM_TAG_ACTIVE_ICON:-󱓻}"
+PERSISTENT_COUNT="${DWM_TAG_PERSISTENT_COUNT:-5}"
 
 # Function to generate and output the tag display
 update_tags() {
@@ -47,35 +43,34 @@ fi
     current=$(xprop -root _NET_CURRENT_DESKTOP 2>/dev/null | awk '{print $3}')
     current=${current:-0}
 
-    # Output tags 1-9 - always show at least active tag and occupied tags
+    # Keep 1-5 visible, like Omarchy. Higher tags appear when active or in use.
     output=""
-    has_output=false
     for i in {0..8}; do
         tag=$((i + 1))
+        symbol="$tag"
         if [ "$i" = "$current" ]; then
-            # Active tag (currently selected) — number stays inline with a thick
-            # accent-colored underline beneath it. No background block and no glyph
-            # disc, so nothing stretches to full bar height or seams. The underline
-            # color is the theme accent; thickness comes from line-size in the bar.
-            output+="%{A1:xdotool key super+$tag:}%{u${COLOR_ACTIVE_BG}}%{+u}%{F${COLOR_ACTIVE}}%{T${FONT_ACTIVE}}$tag%{T-}%{F-}%{-u}%{A} "
-            has_output=true
+            symbol="$ACTIVE_ICON"
+            color="$COLOR_ACTIVE"
+            font="$FONT_ACTIVE"
         elif [ "${urgent_tags[$i]}" = "1" ]; then
-            # Urgent tag (has urgent window)
-            output+="%{A1:xdotool key super+$tag:}%{F${COLOR_URGENT}}%{T${FONT_URGENT}}$tag%{T-}%{F-}%{A} "
-            has_output=true
+            color="$COLOR_URGENT"
+            font="$FONT_URGENT"
         elif [ "${occupied_tags[$i]}" = "1" ]; then
-            # Occupied tag (has windows)
-            output+="%{A1:xdotool key super+$tag:}%{F${COLOR_OCCUPIED}}%{T${FONT_OCCUPIED}}$tag%{T-}%{F-}%{A} "
-            has_output=true
+            color="$COLOR_OCCUPIED"
+            font="$FONT_OCCUPIED"
+        elif (( i < PERSISTENT_COUNT )); then
+            color="$COLOR_EMPTY"
+            font="$FONT_OCCUPIED"
+        else
+            continue
         fi
+        # A 24px clickable slot approximates Omarchy's 6px padding, 1.5px
+        # margins and 9px minimum content width with this 12px mono font.
+        output+="%{A1:xdotool key super+$tag:}%{O8}%{F${color}}%{T${font}}$symbol%{T-}%{F-}%{O9}%{A}"
     done
 
     # Always output something, even if empty, to prevent polybar from breaking
-    if [ "$has_output" = true ]; then
-        echo "$output"
-    else
-        echo " "
-    fi
+    echo "${output:- }"
 }
 
 # Check if tail mode is enabled (for event-driven updates)
