@@ -18,6 +18,12 @@ The OS identifies as Arch with CachyOS components; determine actual installed ke
 
 Check whether a component is a system service, user service or autostart process before restarting/adding it. Dunst/PipeWire/portals can already be owned by systemd. Restarting nm-applet reloads artwork without restarting NetworkManager; verify active connections when making networking changes.
 
+system-config/etc holds installer inputs, not auto-applied state: touchpad mapping is prompted (default yes), keyd remapping and sysctl/zram/udev/i915/tearfree tuning default to no, and the installer filters browser policies to appearance keys only. system-config/reference/etc is a snapshot of live host files for reference. Never enable a prompted tuning set without the user's request.
+
+Power/GPU helpers are hardware-specific: power-management.sh is a read-only report without flags (--apply writes sysfs, --apply-tlp writes TLP config; both need root), and its header targets a different laptop than the observed EliteBook, so inspect before applying. nvidia-gpu and nvidia-temp are nvidia-smi readouts only; disable-powersaving just runs xset -dpms and is already reflected in autostart. PortProton gets a 6-hour user timer plus a launch-time patch hook (automation.md).
+
+Desktop network/VM extras: localsend-toggle drives hostapd + dnsmasq on `ap0` 10.42.0.1/24 with sudo and a pidfile under /run; vmtoggle owns libvirtd and the default libvirt network; KDE Connect starts from autostart. Check their state instead of restarting the underlying service.
+
 The baseline laptop has modest RAM. Prefer existing event-driven interfaces for desktop indicators; add a daemon only when the requested feature needs one. Separate resident overhead from one-time theme/icon generation. A single ps CPU figure is a snapshot, not a benchmark or a zero-impact guarantee.
 
 Keep boot persistence and runtime effects aligned. For privileged system work, preserve the targeted files/ownership and a viable rollback/access path within the user's authorization; do not weaken security or reset unrelated services as a troubleshooting shortcut.

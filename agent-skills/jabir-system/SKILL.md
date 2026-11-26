@@ -18,8 +18,9 @@ Run it relative to this skill directory, or use its absolute path. Multiple --se
 
 | Task | Guide | Helper section |
 |---|---|---|
-| Windows, tags, hotkeys, monitors, login/session | [desktop.md](references/desktop.md) | desktop |
+| Windows, tags, hotkeys, control center, cheatsheets, monitors, login/session | [desktop.md](references/desktop.md) | desktop |
 | Polybar, typography, palettes, wallpaper, GTK/Qt/icons | [appearance.md](references/appearance.md) | appearance |
+| Editor theme extension, browser scheme/frame | [editors-browsers.md](references/editors-browsers.md) | appearance |
 | Apps, MIME defaults, terminals, shell, web/TUI launchers | [apps.md](references/apps.md) | apps |
 | Keyboard/mouse, clipboard, screenshots, recording, lock | [input-capture.md](references/input-capture.md) | input |
 | Packages, kernel, storage, networking, audio, power, security | [services.md](references/services.md) | services |

@@ -11,6 +11,7 @@ Recheck only facts relevant to the next task. Themes, defaults, processes and ke
 - Center: date-center + reminder-center. Functional right modules: pulseaudio, warp, sink-toggle, osk, brightnessctl, battery, tray, powermenu. right-divider is static decoration.
 - Runtime services include NetworkManager, systemd-resolved, LightDM, PipeWire, pipewire-pulse, WirePlumber, dunst and GTK desktop portals. Check systemd ownership before launching duplicates.
 - Observed defaults: Brave browser, Thunar file manager, l3afpad text editor; image and PDF MIME mappings should be queried live.
+- The generated editor theme `DWM Jabir` is installed for Antigravity IDE and VSCodium (the latter shares ~/.vscode-oss/extensions); ~/.vscode, ~/.cursor and ~/.windsurf were absent. Brave and Chrome have both colour-scheme flag files and managed color.json policies; Helium has only a .bak flag file and its policy dir exists.
 - Alacritty, Kitty and Fish are available. The hotkey terminal variable is ghostty, but ghostty was not resolved in the agent shell's PATH; configuration presence alone does not prove a usable executable.
 - Picom was not resolved in PATH and its autostart line is commented out. Blur/opacity requests must first verify the actual compositor situation.
 - Public source: https://github.com/Jabir7006/dwm-jabir. Baseline desktop changes were pushed through 95660de. Skill files have their own later revision history.

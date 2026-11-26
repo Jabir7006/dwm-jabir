@@ -138,11 +138,60 @@ def desktop() -> dict:
                         ('DISPLAY', 'XDG_SESSION_TYPE', 'XDG_CURRENT_DESKTOP')},
             'login_shell': pwd.getpwuid(os.getuid()).pw_shell,
             'processes': selected_processes(),
-            'commands': command_paths(('dwm', 'xrandr', 'xinput', 'xdotool', 'dwm-keybinds')),
+            'commands': command_paths(('dwm', 'xrandr', 'xinput', 'xdotool', 'dwm-keybinds',
+                                       'dwm-controlcenter')),
             'terminal_variable': variables.get('terminal'), 'binding_count': len(keys),
             'monitors': run(['xrandr', '--listmonitors']),
             'current_desktop': run(['xprop', '-root', '_NET_CURRENT_DESKTOP']),
             'display_manager': str(Path('/etc/systemd/system/display-manager.service').resolve())}
+
+
+def editor_theme_state() -> dict:
+    editors = {
+        'Code': (CONFIG / 'Code/User', HOME / '.vscode/extensions'),
+        'Code - Insiders': (CONFIG / 'Code - Insiders/User', HOME / '.vscode-insiders/extensions'),
+        'Code - OSS': (CONFIG / 'Code - OSS/User', HOME / '.vscode-oss/extensions'),
+        'VSCodium': (CONFIG / 'VSCodium/User', HOME / '.vscode-oss/extensions'),
+        'Cursor': (CONFIG / 'Cursor/User', HOME / '.cursor/extensions'),
+        'Windsurf': (CONFIG / 'Windsurf/User', HOME / '.windsurf/extensions'),
+        'Antigravity IDE': (CONFIG / 'Antigravity IDE/User', HOME / '.antigravity-ide/extensions'),
+    }
+    present = {}
+    for name, (settings_dir, ext_root) in editors.items():
+        if not settings_dir.is_dir():
+            continue
+        theme = None
+        for line in text(settings_dir / 'settings.json').splitlines():
+            if line.lstrip().startswith('//'):
+                continue
+            match = re.search(r'"workbench\.colorTheme"\s*:\s*"([^"]*)"', line)
+            if match:
+                theme = match.group(1)
+                break
+        present[name] = {'color_theme': theme,
+                         'local_extension': (ext_root / 'dwm-jabir-theme/package.json').is_file()}
+    return present
+
+
+def browser_theme_state() -> dict:
+    flags = {}
+    for name, filename in (('brave', 'brave-origin-flags.conf'),
+                           ('chrome', 'chrome-flags.conf'),
+                           ('helium', 'helium-browser-flags.conf')):
+        path = CONFIG / filename
+        if path.is_file():
+            values = [line.split('=', 1)[1] for line in text(path).splitlines()
+                      if line.startswith('--force-prefers-color-scheme=')]
+            flags[name] = values[-1] if values else None
+    policies = {}
+    for name, path in (('brave', '/etc/brave/policies/managed/color.json'),
+                       ('chrome', '/etc/opt/chrome/policies/managed/color.json'),
+                       ('helium', '/etc/chromium/policies/managed/color.json')):
+        try:
+            policies[name] = json.loads(text(Path(path))).get('BrowserThemeColor')
+        except (OSError, ValueError):
+            continue
+    return {'content_scheme_flags': flags, 'browser_frame_policies': policies}
 
 
 def appearance() -> dict:
@@ -161,6 +210,10 @@ def appearance() -> dict:
                      for section in bars.sections() if section.startswith('bar/')},
             'font_patterns': re.findall(r'^font-\d+\s*=\s*.+$', text(CONFIG / 'polybar/fonts.ini'), re.M),
             'theme_helper': short_path((HOME / '.local/bin/theme-apply.sh').resolve()),
+            'dynamic_theme_helper': (HOME / '.local/bin/theme-set-dynamic').is_file(),
+            'theme_audit': (HOME / '.local/bin/theme-audit').is_file(),
+            'editors': editor_theme_state(),
+            'browsers': browser_theme_state(),
             'icon_theme': run(['gsettings', 'get', 'org.gnome.desktop.interface', 'icon-theme'])}
 
 
