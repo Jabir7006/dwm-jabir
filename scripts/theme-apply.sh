@@ -136,6 +136,16 @@ except Exception:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# FASTFETCH — update the marked logo color while preserving the greeting layout.
+# ══════════════════════════════════════════════════════════════════════════════
+FASTFETCH_CFG="${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch/config.jsonc"
+if [[ -f "$FASTFETCH_CFG" && "$SEL_BORDER" =~ ^#[[:xdigit:]]{6}$ ]] \
+        && grep -qF '// theme-apply: logo accent' "$FASTFETCH_CFG"; then
+    sed -Ei "s|^([[:space:]]*\"1\"[[:space:]]*:[[:space:]]*\")[^\"]*(\"[[:space:]]*,?[[:space:]]*// theme-apply: logo accent[[:space:]]*)$|\1${SEL_BORDER}\2|" \
+        "$FASTFETCH_CFG" || echo 'theme-apply: could not update the Fastfetch logo accent' >&2
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ALACRITTY — write ~/.config/alacritty/active-theme.toml
 # ══════════════════════════════════════════════════════════════════════════════
 ALACRITTY_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/alacritty"

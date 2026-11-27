@@ -34,6 +34,8 @@ Terminal, Rofi, GTK/Qt, dunst and icon configuration roots are conventional ~/.c
 
 The starship prompt palette is generated in place inside ~/.config/starship.toml between the two `starship theme palette` marker comments; the layout above them is user-owned. Editing the palette by hand is overwritten on the next apply — expose a new token in the generated block instead. Starship re-reads the file per prompt, so no restart is needed.
 
+Fastfetch reads the active theme accent from the marked logo color in ~/.config/fastfetch/config.jsonc. theme-apply updates that field for both the Fish greeting and manual Fastfetch runs. The module labels keep their existing ANSI color assignments.
+
 xsettingsd receives the GTK theme/icon names and a HUP so X11/XFCE apps follow; nwg-look is the GUI editor for GTK settings. Both are downstream of theme-apply, not alternative palette sources.
 
 Login appearance is LightDM-related: inspect the active greeter in /etc/lightdm/ and the repository lightdm/ files. Bootloader styling is a separate host task; do not replace boot configuration to change a desktop palette.
