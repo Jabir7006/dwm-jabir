@@ -6,6 +6,8 @@
 
 [theme.dynamic] is a generated section: theme-set-dynamic (matugen + matugen-dynamic-map) rewrites only that block from a wallpaper and requires matugen/PIL; never hand-edit it. Wallpaper picker/carousel/random must call wallpaper-apply, which applies the picture (feh writes ~/.fehbg, replayed by autostart) before staging or applying palette generation. Palette failure must not undo wallpaper selection. Three pickers exist — rofi grid (wallpaper-picker.sh, SUPER+CTRL+W), carousel (SUPER+W) and caelestia (wallpaper-caelestia) — plus wallpaper-random.sh on SUPER+SHIFT+W; only the wallpaper-apply path regenerates a dynamic palette. The Control Center's own randomize action bypasses it.
 
+Matugen uses its first ranked wallpaper color (`--source-color-index 0`). The mapper uses the active Material `primary` role for the desktop accent. Papirus folder presets are matched to that accent with extra weight on perceptual hue, so a light accent can still pick a preset in its color family.
+
 Theme apply has a lock and broad side effects: it regenerates several apps, restarts Polybar/tray processes, may close/restart Thunar and repaints existing dwm borders by cycling focus (dwm paints borders on focus/manage only; new windows are always correct). Use it for palette changes, not routine bar sizing. theme-audit reports drift per layer without writing. Editor-extension and browser-policy mechanics are in [editors-browsers.md](editors-browsers.md).
 
 ## Polybar

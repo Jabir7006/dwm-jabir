@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import colorsys
+import math
 import os
 import re
 import shutil
@@ -72,6 +73,23 @@ def rgb(hex_color: str) -> tuple[int, int, int]:
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
+def oklab(hex_color: str) -> tuple[float, float, float]:
+    """Convert an sRGB hex color to OKLab for perceptual matching."""
+    channels = (value / 255 for value in rgb(hex_color))
+    red, green, blue = (
+        value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+        for value in channels
+    )
+    l = math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue)
+    m = math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue)
+    s = math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue)
+    return (
+        0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+        1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+        0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+    )
+
+
 def primary_hex(path: str) -> str | None:
     """The most saturated non-white colour in an SVG: its folder body tone."""
     try:
@@ -95,7 +113,8 @@ def primary_hex(path: str) -> str | None:
 def nearest_color(accent: str, colors: list[str], src: str) -> str:
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", accent or ""):
         raise ValueError(f"invalid accent: {accent!r}")
-    a = rgb(accent)
+    accent_l, accent_a, accent_b = oklab(accent)
+    accent_chroma = math.hypot(accent_a, accent_b)
     ranked = []
     for color in colors:
         probe = os.path.join(src, "48x48", "places", f"folder-{color}-documents.svg")
@@ -104,9 +123,14 @@ def nearest_color(accent: str, colors: list[str], src: str) -> str:
         hex_color = primary_hex(probe)
         if not hex_color:
             continue
-        c = rgb(hex_color)
-        dist = sum((x - y) ** 2 for x, y in zip(a, c)) ** 0.5
-        ranked.append((dist, color))
+        lightness, a, b = oklab(hex_color)
+        chroma = math.hypot(a, b)
+        # Compare hue at the accent's chroma so pastels keep their color family.
+        # Limit the scaling of nearly gray presets, which have no reliable hue.
+        hue_scale = accent_chroma / max(chroma, 0.04)
+        hue_distance = (accent_a - hue_scale * a) ** 2 + (accent_b - hue_scale * b) ** 2
+        distance = (accent_l - lightness) ** 2 + (accent_chroma - chroma) ** 2 + 24 * hue_distance
+        ranked.append((distance, color))
     if not ranked:
         raise ValueError("could not measure any bundled folder colour")
     return min(ranked)[1]

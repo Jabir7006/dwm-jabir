@@ -62,13 +62,13 @@ python3 -c 'from PIL import Image; import sys; Image.open(sys.argv[1]).verify()'
 
 # ── Extract + map (nothing is written until this succeeds) ────────────────────
 # --dry-run: JSON to stdout only (no templates, wallpaper, or reloads).
-# --prefer saturation: non-interactive source-color choice (most vivid hue).
+# --source-color-index 0: use Matugen's first ranked wallpaper color.
 # -m: scheme mode chosen from wallpaper luminance (single fast run).
 TMP_BLOCK="$(mktemp)"
 WALL_MODE="$(python3 -c 'from PIL import Image, ImageStat; import sys; im=Image.open(sys.argv[1]).convert("L").resize((64,64)); print("dark" if ImageStat.Stat(im).mean[0]/255 < 0.45 else "light")' "$WALLPAPER")"
 TMP_JSON="$(mktemp)"
 MATUGEN_LOG="/tmp/theme-set-dynamic.log"
-if ! matugen image "$WALLPAPER" --json hex --dry-run --prefer saturation -m "$WALL_MODE" >"$TMP_JSON" 2>"$MATUGEN_LOG" \
+if ! matugen image "$WALLPAPER" --json hex --dry-run --source-color-index 0 -m "$WALL_MODE" >"$TMP_JSON" 2>"$MATUGEN_LOG" \
     || ! matugen-dynamic-map --from-json "$TMP_JSON" --wallpaper "$WALLPAPER" > "$TMP_BLOCK" 2>>"$MATUGEN_LOG"; then
     echo "theme-set-dynamic: palette generation failed, nothing changed (see $MATUGEN_LOG)" >&2
     rm -f "$TMP_BLOCK" "$TMP_JSON"

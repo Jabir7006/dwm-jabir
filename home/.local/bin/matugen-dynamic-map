@@ -9,6 +9,7 @@ Usage:
 Mapping principles:
   * Text/background pairs use Material's own on_* roles, so WCAG contrast
     is inherited from the M3 spec instead of guessed.
+  * The desktop accent uses Material's primary role for the selected mode.
   * ANSI hues are assigned greedily by closest-hue from the M3 accent pool
     (error is pinned to red, as M3 intends), keeping terminal colors true
     to the wallpaper instead of forcing rainbow slots.
@@ -22,7 +23,6 @@ callers never write a half-generated theme.
 import argparse
 import colorsys
 import json
-import re
 import sys
 
 
@@ -195,15 +195,7 @@ def main():
 
     bg = s["background"].upper()
     fg = s["on_background"].upper()
-    # Vivid accents: matugen's extracted source hue. M3 dark `primary` is a
-    # light pastel (right for text, washed-out as a 1px border), while
-    # source_color carries the wallpaper's punch (e.g. rose #AD3073 at 72%
-    # saturation vs pastel #FFB0D0 at 31%). Falls back to primary.
-    raw_source = s.get("source_color", "")
-    if isinstance(raw_source, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", raw_source):
-        accent = raw_source.upper()
-    else:
-        accent = s["primary"].upper()
+    accent = s["primary"].upper()
     surface = s.get("surface_variant", s["surface"]).upper()
     # Keep the established neutral unfocused border. The wallpaper accent is
     # intentionally reserved for the selected/focused border.
